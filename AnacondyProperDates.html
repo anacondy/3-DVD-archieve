@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Retro DVD Interface + Repo List</title>
+    <!-- Importing Retro Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --phosphor-main: #33ff00;
+            --phosphor-dim: #1a8000;
+            --particle-color: #ffff00; /* Yellow Frost */
+            --bg-color: #050505;
+            --scanline-color: rgba(0, 0, 0, 0.5);
+            --highlight-bg: rgba(51, 255, 0, 0.2);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--phosphor-main);
+            font-family: 'VT323', monospace;
+            overflow: hidden; /* Prevent scrolling */
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Crucial for mobile app feel */
+        }
+
+        /* --- CRT EFFECT LAYERS --- */
+        #crt-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Canvas for Particles */
+        #particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* UI Layer */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            pointer-events: none; /* Let clicks pass to canvas */
+            padding: 20px;
+            box-sizing: border-box;
+            opacity: 0; /* Hidden initially */
+            transition: opacity 1s ease-in;
+        }
+
+        /* Intro Layer */
+        #intro-layer {
+            position: absolute;
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg-color);
+            transition: opacity 1s ease-out;
+            opacity: 0; /* Hidden until start */
+        }
+
+        /* Start Overlay */
+        #start-overlay {
+            position: absolute;
+            z-index: 50;
+            width: 100%;
+            height: 100%;
+            background: black;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        /* Scanlines */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.2) 50%,
+                rgba(0,0,0,0.2)
+            );
+            background-size: 100% 4px;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        /* Screen Glow/Vignette */
+        .vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,0.6) 100%);
+            z-index: 21;
+            pointer-events: none;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.7);
+        }
+
+        /* --- UI ELEMENTS --- */
+        .glow-text {
+            text-shadow: 0 0 5px var(--phosphor-main), 0 0 10px var(--phosphor-main);
+        }
+
+        .dim-text {
+            color: var(--phosphor-dim);
+            text-shadow: none;
+        }
+
+        .pixel-font {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        /* Intro DVD Logo SVG Styling */
+        .dvd-svg {
+            width: 80%;
+            max-width: 400px;
+            fill: none;
+            stroke: var(--phosphor-main);
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 8px var(--phosphor-main));
+        }
+
+        .dvd-path {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+        }
+
+        .dvd-disc {
+            stroke-dasharray: 600;
+            stroke-dashoffset: 600;
+        }
+        
+        /* Animations */
+        .animate-draw {
+            animation: drawStroke 3s ease-in-out forwards;
+        }
+        
+        .animate-draw-delay {
+            animation: drawStroke 3s ease-in-out 0.5s forwards;
+        }
+
+        @keyframes drawStroke {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        /* Flashing cursor */
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+
+        /* Author Signature Effect */
+        .author-signature {
+            color: #fff; /* White hot core */
+            text-shadow: 0 0 5px #fff, 0 0 10px var(--phosphor-main), 0 0 20px var(--phosphor-main);
+            animation: signaturePulse 2s infinite ease-in-out alternate;
+        }
+
+        @keyframes signaturePulse {
+            0% { opacity: 0.7; text-shadow: 0 0 2px #fff, 0 0 5px var(--phosphor-main); transform: scale(0.98); }
+            100% { opacity: 1; text-shadow: 0 0 10px #fff, 0 0 20px var(--phosphor-main), 0 0 40px var(--phosphor-main); transform: scale(1.02); }
+        }
+
+        /* Layout Grid */
+        .top-bar, .bottom-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        
+        .side-data {
+            font-size: 0.8rem;
+            line-height: 1.2;
+            opacity: 0.8;
+        }
+
+        .center-hud {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            width: 100%;
+            max-width: 800px;
+            pointer-events: auto; 
+        }
+
+        /* Splash Screen (DVD VIDEO) */
+        #splash-screen {
+            transition: opacity 0.5s ease-out;
+        }
+
+        /* Repository List Styles */
+        #repo-screen {
+            display: none; /* Hidden initially */
+            opacity: 0;
+            transition: opacity 1s ease-in;
+            text-align: center;
+            width: 100%;
+        }
+
+        .repo-list-container {
+            width: 90%;
+            max-width: 600px;
+            height: 55vh; /* Spacious height */
+            margin: 20px auto;
+            border: 2px solid var(--phosphor-dim);
+            padding: 10px;
+            overflow-y: auto;
+            text-align: left;
+            background: rgba(0, 20, 0, 0.3);
+            box-shadow: 0 0 15px rgba(51, 255, 0, 0.1);
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        }
+
+        /* Custom Retro Scrollbar */
+        .repo-list-container::-webkit-scrollbar {
+            width: 12px;
+        }
+        .repo-list-container::-webkit-scrollbar-track {
+            background: #000;
+            border-left: 1px solid var(--phosphor-dim);
+        }
+        .repo-list-container::-webkit-scrollbar-thumb {
+            background: var(--phosphor-dim);
+            border: 1px solid #000;
+        }
+        .repo-list-container::-webkit-scrollbar-thumb:hover {
+            background: var(--phosphor-main);
+        }
+
+        .repo-item {
+            display: block;
+            padding: 15px;
+            margin-bottom: 5px;
+            text-decoration: none;
+            color: var(--phosphor-main);
+            font-size: 1.2rem;
+            border-bottom: 1px dashed var(--phosphor-dim);
+            transition: all 0.2s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .repo-item:hover {
+            background-color: var(--phosphor-main);
+            color: black;
+            font-weight: bold;
+            text-shadow: none;
+        }
+
+        .repo-item:hover::before {
+            content: '>';
+            position: absolute;
+            left: 5px;
+        }
+
+        /* Responsive tweaks */
+        @media (max-width: 768px) {
+            .side-data { font-size: 0.6rem; }
+            .dvd-svg { width: 90%; }
+            .repo-item { font-size: 0.9rem; padding: 12px; } /* Slightly smaller text for mobile */
+            .center-hud { width: 95%; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="crt-container">
+        <!-- CRT Visual Effects -->
+        <div class="scanlines"></div>
+        <div class="vignette"></div>
+
+        <!-- Start Overlay -->
+        <div id="start-overlay" onclick="startExperience()">
+            <div class="pixel-font glow-text text-xl animate-bounce">▶ TAP TO START</div>
+            <div class="dim-text mt-4 text-sm">INITIALIZE SYSTEM AUDIO</div>
+        </div>
+
+        <!-- 1. The Particle Canvas -->
+        <canvas id="particle-canvas"></canvas>
+
+        <!-- 2. The Intro Layer (DVD Logo) -->
+        <div id="intro-layer">
+            <svg class="dvd-svg" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+                <path id="path1" class="dvd-path" d="M20 20 H50 C70 20 70 60 50 60 H20 Z M30 30 V50 H45 C55 50 55 30 45 30 H30" />
+                <path id="path2" class="dvd-path" d="M75 20 L90 60 L105 20" />
+                <path id="path3" class="dvd-path" d="M110 20 H130 C150 20 150 60 130 60 H110 Z M120 30 V50 H125 C135 50 135 30 125 30 H120" />
+                <ellipse id="disc1" class="dvd-disc" cx="90" cy="75" rx="60" ry="10" />
+                <path id="disc2" class="dvd-disc" d="M40 90 H140" stroke-dasharray="5,5" />
+            </svg>
+        </div>
+
+        <!-- 3. The Main UI Layer (Loads after intro) -->
+        <div id="ui-layer">
+            <div class="top-bar">
+                <div class="side-data text-left">
+                    <span class="glow-text">REC ●</span><br>
+                    <span class="dim-text">TAPE: A-04</span><br>
+                    <span class="dim-text">FPS: <span id="fps-counter">60</span></span>
+                </div>
+                <div class="pixel-font text-center text-xl tracking-widest glow-text opacity-50">
+                    SYSTEM READY
+                </div>
+                <div class="side-data text-right">
+                    <span class="dim-text">BAT: 98%</span><br>
+                    <span class="dim-text">MEM: <span id="mem-counter">OK</span></span><br>
+                    <span class="blink glow-text">_ACTIVE</span>
+                </div>
+            </div>
+
+            <!-- Central Content Area -->
+            <div class="center-hud">
+                
+                <!-- Screen 1: Splash (DVD VIDEO) -->
+                <div id="splash-screen">
+                    <h1 class="pixel-font text-4xl md:text-6xl glow-text mb-4 tracking-tighter">DVD VIDEO</h1>
+                    <div class="w-64 h-2 bg-green-900 mx-auto border border-green-500 relative overflow-hidden">
+                        <div id="loading-bar" class="absolute top-0 left-0 h-full bg-green-400 w-full opacity-70"></div>
+                    </div>
+                    <p class="mt-2 text-sm dim-text uppercase tracking-widest">
+                        LOADING ARCHIVES...
+                    </p>
+                </div>
+
+                <!-- Screen 2: Repository List (Hidden Initially) -->
+                <div id="repo-screen">
+                    <h2 class="pixel-font text-2xl md:text-4xl glow-text mb-2">ARCHIVE INDEX</h2>
+                    <p class="dim-text text-sm mb-4">SELECT TITLE TO ACCESS</p>
+                    
+                    <div class="repo-list-container" id="repo-list">
+                        <!-- Content Injected via JS -->
+                    </div>
+
+                    <!-- Sine wave simulation moved here -->
+                    <canvas id="wave-canvas" width="300" height="40" class="mt-4 mx-auto opacity-70"></canvas>
+
+                    <!-- AUTHOR SIGNATURE -->
+                    <div class="mt-2 mb-2">
+                        <div class="text-[0.6rem] dim-text tracking-[0.5em] mb-1">//// SYS.ARCHITECT ////</div>
+                        <div class="author-signature pixel-font text-xl md:text-2xl tracking-widest">ANACONDY</div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="bottom-bar">
+                <div class="side-data">
+                    <span class="dim-text">COORD X: <span id="coord-x">000</span></span><br>
+                    <span class="dim-text">COORD Y: <span id="coord-y">000</span></span>
+                </div>
+                <div class="side-data text-right">
+                     <span class="dim-text">MODE: BROWSE</span><br>
+                     <span class="glow-text">TOUCH SCROLL</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================
+           DATA CONFIGURATION
+           ========================================= */
+        const rawRepoList = [
+            { name: "25--3-pro-test", url: "https://anacondy.github.io/25--3-pro-test/", date: "2025-11-18T20:39:36Z" },
+            { name: "25-2-saving-pro-2", url: "https://anacondy.github.io/25-2-saving-pro-2/", date: "2025-11-19T18:55:24Z" },
+            { name: "3--Aussie-Political-MAP", url: "https://anacondy.github.io/3--Aussie-Political-MAP/", date: "2025-11-21T13:00:53Z" },
+            { name: "3-Bad-day-24-CRT-SPACESHIP-", url: "https://anacondy.github.io/3-Bad-day-24-CRT-SPACESHIP-/", date: "2025-11-24T09:55:23Z" },
+            { name: "3-Canada-map-", url: "https://anacondy.github.io/3-Canada-map-/", date: "2025-11-21T12:12:32Z" },
+            { name: "3-CyperpunkSettings", url: "https://anacondy.github.io/3-CyperpunkSettings/", date: "2025-11-24T21:05:18Z" },
+            { name: "3-Gem-ind-via-VCS", url: "https://anacondy.github.io/3-Gem-ind-via-VCS/", date: "2025-11-23T19:29:47Z" },
+            { name: "3-GEM-Map", url: "https://anacondy.github.io/3-GEM-Map/", date: "2025-11-21T11:18:45Z" },
+            { name: "3-Germany", url: "https://anacondy.github.io/3-Germany/", date: "2025-11-21T13:24:14Z" },
+            { name: "3-Heli-24", url: "https://anacondy.github.io/3-Heli-24/", date: "2025-11-24T11:34:35Z" },
+            { name: "3-L-trange-Experience", url: "https://anacondy.github.io/3-L-trange-Experience/", date: "2025-11-24T22:41:04Z" },
+            { name: "3-mobile-indian-map", url: "https://anacondy.github.io/3-mobile-indian-map/", date: "2025-11-23T21:47:00Z" },
+            { name: "3-Neon-pulse--24-bad-day- ❌", url: "https://anacondy.github.io/3-Neon-pulse--24-bad-day-/", date: "2025-11-24T10:07:12Z" },
+            { name: "3-Regency-Horror-Menu", url: "https://anacondy.github.io/3-Regency-Horror-Menu/", date: "2025-11-22T13:21:26Z" },
+            { name: "3-Regency-latern", url: "https://anacondy.github.io/3-Regency-latern/", date: "2025-11-22T16:53:33Z" },
+            { name: "3-RetroDVD", url: "https://anacondy.github.io/3-RetroDVD/", date: "2025-11-24T21:01:38Z" },
+            { name: "3-System-registry-", url: "https://anacondy.github.io/3-System-registry-/", date: "2025-11-22T14:34:50Z" },
+            { name: "3-USA-getting-live-", url: "https://anacondy.github.io/3-USA-getting-live-/", date: "2025-11-21T12:16:31Z" },
+            { name: "3-West-world", url: "https://anacondy.github.io/3-West-world/", date: "2025-11-21T14:14:28Z" },
+            { name: "3-WestWorld-without-bounce-", url: "https://anacondy.github.io/3-WestWorld-without-bounce-/", date: "2025-11-21T14:21:58Z" },
+            { name: "alvido-test-2", url: "https://anacondy.github.io/alvido-test-2/", date: "2025-10-12T20:04:26Z" },
+            { name: "alvido-test-4", url: "https://anacondy.github.io/alvido-test-4/", date: "2025-10-12T20:14:07Z" },
+            { name: "alvido-test-5", url: "https://anacondy.github.io/alvido-test-5/", date: "2025-10-12T20:20:35Z" },
+            { name: "alvido-testing-1", url: "https://anacondy.github.io/alvido-testing-1/", date: "2025-10-12T19:54:10Z" },
+            { name: "deep-res-Job", url: "https://anacondy.github.io/deep-res-Job/", date: "2025-11-11T03:18:04Z" },
+            { name: "falling-leaves-", url: "https://anacondy.github.io/falling-leaves-/", date: "2025-11-05T05:13:48Z" },
+            { name: "GJ-Terminal-2-sorting-card-page-", url: "https://anacondy.github.io/GJ-Terminal-2-sorting-card-page-/", date: "2025-10-16T16:15:18Z" },
+            { name: "GJ-Terminal-just-a-data-table-with-good-UI", url: "https://anacondy.github.io/GJ-Terminal-just-a-data-table-with-good-UI/", date: "2025-10-16T15:55:51Z" },
+            { name: "glassmorphic-site-card-Ui-html-", url: "https://anacondy.github.io/glassmorphic-site-card-Ui-html-/", date: "2025-10-15T19:20:59Z" },
+            { name: "GPA-calculator", url: "https://anacondy.github.io/GPA-calculator/", date: "2025-08-20T16:53:40Z" },
+            { name: "Indian-SC-verdicts-site", url: "https://anacondy.github.io/Indian-SC-verdicts-site/", date: "2025-10-19T23:26:19Z" },
+            { name: "leaves-dying-", url: "https://anacondy.github.io/leaves-dying-/", date: "2025-11-05T06:05:02Z" },
+            { name: "live-volcano-ui", url: "https://anacondy.github.io/live-volcano-ui/", date: "2025-09-02T15:55:20Z" },
+            { name: "login-input", url: "https://anacondy.github.io/login-input/", date: "2025-11-05T18:27:40Z" },
+            { name: "mobile-comparison-site-", url: "https://anacondy.github.io/mobile-comparison-site-/", date: "2025-08-22T11:09:53Z" },
+            { name: "MP-tracker-site-", url: "https://anacondy.github.io/MP-tracker-site-/", date: "2025-11-02T18:11:27Z" },
+            { name: "my-living-map", url: "https://anacondy.github.io/my-living-map/", date: "2025-08-31T18:31:11Z" },
+            { name: "paper-gemini-archieve-saving-progress-2-", url: "https://anacondy.github.io/paper-gemini-archieve-saving-progress-2-/", date: "2025-10-12T08:23:43Z" },
+            { name: "papers-gemini-archive-4-", url: "https://anacondy.github.io/papers-gemini-archive-4-/", date: "2025-10-12T19:33:51Z" },
+            { name: "Papers-login-better-security-", url: "https://anacondy.github.io/Papers-login-better-security-/", date: "2025-10-14T17:57:36Z" },
+            { name: "Pint-site-saving-progress-1-", url: "https://anacondy.github.io/Pint-site-saving-progress-1-/", date: "2025-11-03T14:39:35Z" },
+            { name: "powershell-cl-sc-cases-site-htmls-", url: "https://anacondy.github.io/powershell-cl-sc-cases-site-htmls-/", date: "2025-10-21T18:14:38Z" },
+            { name: "SC-site-with-home-page-", url: "https://anacondy.github.io/SC-site-with-home-page-/", date: "2025-10-20T19:24:33Z" },
+            { name: "stars-ui", url: "https://anacondy.github.io/stars-ui/", date: "2025-09-01T22:00:39Z" },
+            { name: "stars-ui-2-", url: "https://anacondy.github.io/stars-ui-2-/", date: "2025-09-10T14:26:48Z" },
+            { name: "stars-UI-3", url: "https://anacondy.github.io/stars-UI-3/", date: "2025-09-10T14:42:56Z" },
+            { name: "termial-archieve-before-SQLite-imp", url: "https://anacondy.github.io/termial-archieve-before-SQLite-imp/", date: "2025-10-12T21:29:58Z" },
+            { name: "Terminal-Archives-PYQs-", url: "https://anacondy.github.io/Terminal-Archives-PYQs-/", date: "2025-10-10T19:51:18Z" },
+            { name: "terminal-site-post-mortem-", url: "https://anacondy.github.io/terminal-site-post-mortem-/", date: "2025-10-15T17:59:37Z" }
+        ];
+
+        /* =========================================
+           AUDIO ENGINE (Web Audio API)
+           ========================================= */
+        let audioCtx;
+        let masterGain;
+        
+        const AudioEngine = {
+            init: async function() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                
+                // Only create if not already existing
+                if (!audioCtx) {
+                    audioCtx = new AudioContext();
+                }
+
+                // MOBILE FIX: Always try to resume on user gesture
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
+
+                if (!masterGain) {
+                    masterGain = audioCtx.createGain();
+                    masterGain.gain.value = 0.3; 
+                    masterGain.connect(audioCtx.destination);
+                    
+                    // Only start loops if they haven't started (prevent doubling up)
+                    this.startAmbience();
+                    this.playBootSound();
+                }
+            },
+
+            startAmbience: function() {
+                // Low Hum
+                const oscLow = audioCtx.createOscillator();
+                oscLow.type = 'sine';
+                oscLow.frequency.value = 60;
+                const gainLow = audioCtx.createGain();
+                gainLow.gain.value = 0.1;
+                oscLow.connect(gainLow);
+                gainLow.connect(masterGain);
+                oscLow.start();
+
+                // High Whine
+                const oscHigh = audioCtx.createOscillator();
+                oscHigh.type = 'sine';
+                oscHigh.frequency.value = 15000;
+                const gainHigh = audioCtx.createGain();
+                gainHigh.gain.value = 0.02;
+                oscHigh.connect(gainHigh);
+                gainHigh.connect(masterGain);
+                oscHigh.start();
+            },
+
+            playBootSound: function() {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 2);
+                gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.5);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 3);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 3.1);
+            },
+
+            playParticleSound: function(intensity) {
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+                
+                if (Math.random() > 0.3) return; 
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const freq = 2000 + Math.random() * 3000; 
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05 * intensity, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            },
+
+            playHoverSound: function() {
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+                
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.05);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.06);
+            }
+        };
+
+        /* =========================================
+           VISUAL ENGINE
+           ========================================= */
+        const PARTICLE_COUNT = 800; 
+        const MOUSE_RADIUS = 120;
+        const PARTICLE_COLOR = '#ffff00';
+        
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+        const uiLayer = document.getElementById('ui-layer');
+        const introLayer = document.getElementById('intro-layer');
+        const startOverlay = document.getElementById('start-overlay');
+        const splashScreen = document.getElementById('splash-screen');
+        const repoScreen = document.getElementById('repo-screen');
+        
+        // --- START SEQUENCE ---
+        async function startExperience() {
+            // 1. Init Audio (Await for resume if needed)
+            await AudioEngine.init();
+
+            // 2. Remove overlay
+            startOverlay.style.opacity = '0';
+            setTimeout(() => startOverlay.style.display = 'none', 500);
+
+            // 3. Init Particles & Render
+            initParticles();
+            animate();
+            renderRepoList();
+
+            // 4. Play Intro (DVD Logo)
+            introLayer.style.opacity = '1';
+            document.getElementById('path1').classList.add('animate-draw');
+            document.getElementById('path2').classList.add('animate-draw');
+            document.getElementById('path3').classList.add('animate-draw');
+            document.getElementById('disc1').classList.add('animate-draw-delay');
+            document.getElementById('disc2').classList.add('animate-draw-delay');
+
+            // 5. Transition to Splash Screen
+            setTimeout(() => {
+                introLayer.style.opacity = '0';
+                setTimeout(() => {
+                    introLayer.style.display = 'none';
+                    uiLayer.style.opacity = '1';
+                    initWave(); 
+                    
+                    // 6. Transition to Repo List (After 3 seconds on Splash)
+                    setTimeout(() => {
+                        splashScreen.style.opacity = '0';
+                        setTimeout(() => {
+                            splashScreen.style.display = 'none';
+                            repoScreen.style.display = 'block';
+                            // Force reflow
+                            void repoScreen.offsetWidth;
+                            repoScreen.style.opacity = '1';
+                        }, 500);
+                    }, 3000);
+
+                }, 1000);
+            }, 3500);
+
+            resizeCanvas();
+        }
+
+        // --- RENDER REPO LIST ---
+        function formatRetroDate(isoDateString) {
+            if(!isoDateString) return "UNKNOWN";
+            const date = new Date(isoDateString);
+            const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = months[date.getMonth()];
+            const year = date.getFullYear();
+            return `${day}-${month}-${year}`;
+        }
+
+        function renderRepoList() {
+            const listContainer = document.getElementById('repo-list');
+            listContainer.innerHTML = '';
+            
+            rawRepoList.forEach((repo, index) => {
+                const link = document.createElement('a');
+                link.href = repo.url;
+                link.className = 'repo-item';
+                link.target = "_blank"; // Open in new tab
+                
+                // Add index number for retro list feel
+                const idxStr = (index + 1).toString().padStart(2, '0');
+                
+                link.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items: center;">
+                        <span class="truncate pr-4">${idxStr}. ${repo.name}</span>
+                        <span class="dim-text text-xs whitespace-nowrap">${formatRetroDate(repo.date)}</span>
+                    </div>
+                `;
+                
+                // Add hover sound effect
+                link.addEventListener('mouseenter', () => AudioEngine.playHoverSound());
+                // For touch devices, ensure sound plays on interaction
+                link.addEventListener('click', () => AudioEngine.playHoverSound()); 
+                
+                listContainer.appendChild(link);
+            });
+        }
+
+        // --- PARTICLE SYSTEM ---
+        let particles = [];
+        let mouse = { x: null, y: null, active: false, velocity: 0 };
+        let lastMousePos = { x: 0, y: 0 };
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            initParticles();
+        });
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        const updateMouse = (x, y) => {
+            const dx = x - lastMousePos.x;
+            const dy = y - lastMousePos.y;
+            mouse.velocity = Math.sqrt(dx*dx + dy*dy);
+            lastMousePos.x = x;
+            lastMousePos.y = y;
+            mouse.x = x;
+            mouse.y = y;
+            mouse.active = true;
+            
+            if (document.getElementById('coord-x')) {
+                document.getElementById('coord-x').innerText = Math.floor(x).toString().padStart(3, '0');
+                document.getElementById('coord-y').innerText = Math.floor(y).toString().padStart(3, '0');
+            }
+        };
+
+        window.addEventListener('mousemove', (e) => updateMouse(e.x, e.y));
+        
+        // Mobile Touch Handling (Prevent Default to stop scrolling while touching canvas)
+        window.addEventListener('touchmove', (e) => {
+            // Only prevent default if touching the canvas directly (not the list)
+            if(e.target === canvas) {
+                // e.preventDefault(); // Optional: uncomment if you want to block ALL scrolling on canvas
+            }
+            updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+        }, {passive: false});
+
+        window.addEventListener('touchstart', (e) => {
+            lastMousePos.x = e.touches[0].clientX;
+            lastMousePos.y = e.touches[0].clientY;
+            updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+            // Resume audio context on touch if needed
+            if(audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }, {passive: false});
+
+        window.addEventListener('touchend', () => { mouse.active = false; mouse.velocity = 0; });
+        window.addEventListener('mouseout', () => { mouse.active = false; mouse.velocity = 0; });
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.size = Math.random() * 2 + 1; 
+                this.baseX = this.x;
+                this.baseY = this.y;
+                this.density = (Math.random() * 30) + 1;
+            }
+
+            draw() {
+                ctx.fillStyle = PARTICLE_COLOR;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+            }
+
+            update() {
+                if (mouse.active) {
+                    let dx = mouse.x - this.x;
+                    let dy = mouse.y - this.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < MOUSE_RADIUS) {
+                        const forceDirectionX = dx / distance;
+                        const forceDirectionY = dy / distance;
+                        const maxDistance = MOUSE_RADIUS;
+                        const force = (maxDistance - distance) / maxDistance;
+                        const directionX = forceDirectionX * force * this.density;
+                        const directionY = forceDirectionY * force * this.density;
+
+                        this.vx -= directionX;
+                        this.vy -= directionY;
+
+                        if (mouse.velocity > 5 && Math.random() > 0.99) {
+                            AudioEngine.playParticleSound(Math.min(mouse.velocity / 20, 1));
+                        }
+                    }
+                }
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= 0.95; 
+                this.vy *= 0.95;
+                if (this.x > canvas.width) this.x = 0;
+                if (this.x < 0) this.x = canvas.width;
+                if (this.y > canvas.height) this.y = 0;
+                if (this.y < 0) this.y = canvas.height;
+            }
+        }
+
+        function initParticles() {
+            particles = [];
+            const count = window.innerWidth < 768 ? PARTICLE_COUNT / 2 : PARTICLE_COUNT;
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].draw();
+                particles[i].update();
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function initWave() {
+            const waveCanvas = document.getElementById('wave-canvas');
+            const waveCtx = waveCanvas.getContext('2d');
+            let offset = 0;
+            function drawWave() {
+                waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+                waveCtx.beginPath();
+                waveCtx.lineWidth = 2;
+                waveCtx.strokeStyle = '#33ff00';
+                for (let i = 0; i < waveCanvas.width; i++) {
+                    const y = 20 + Math.sin(i * 0.05 + offset) * 10 * Math.sin(offset * 0.1);
+                    waveCtx.lineTo(i, y);
+                }
+                waveCtx.stroke();
+                offset += 0.1;
+                requestAnimationFrame(drawWave);
+            }
+            drawWave();
+
+            setInterval(() => {
+                const fpsEl = document.getElementById('fps-counter');
+                if(fpsEl) fpsEl.innerText = Math.floor(58 + Math.random() * 4);
+                
+                const memEl = document.getElementById('mem-counter');
+                if(memEl) memEl.innerText = Math.random() > 0.9 ? "BUSY" : "OK";
+            }, 500);
+            
+            const bar = document.getElementById('loading-bar');
+            let width = 100;
+            setInterval(() => {
+                if(bar) {
+                    width = (width + 5) % 100;
+                    bar.style.width = width + '%';
+                }
+            }, 100);
+        }
+    </script>
+</body>
+</html>
