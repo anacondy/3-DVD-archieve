@@ -28,6 +28,7 @@
             overflow: hidden; /* Prevent scrolling */
             user-select: none;
             -webkit-user-select: none;
+            touch-action: none; /* Crucial for mobile app feel */
         }
 
         /* --- CRT EFFECT LAYERS --- */
@@ -187,6 +188,18 @@
             50% { opacity: 0; }
         }
 
+        /* Author Signature Effect */
+        .author-signature {
+            color: #fff; /* White hot core */
+            text-shadow: 0 0 5px #fff, 0 0 10px var(--phosphor-main), 0 0 20px var(--phosphor-main);
+            animation: signaturePulse 2s infinite ease-in-out alternate;
+        }
+
+        @keyframes signaturePulse {
+            0% { opacity: 0.7; text-shadow: 0 0 2px #fff, 0 0 5px var(--phosphor-main); transform: scale(0.98); }
+            100% { opacity: 1; text-shadow: 0 0 10px #fff, 0 0 20px var(--phosphor-main), 0 0 40px var(--phosphor-main); transform: scale(1.02); }
+        }
+
         /* Layout Grid */
         .top-bar, .bottom-bar {
             display: flex;
@@ -229,7 +242,7 @@
         .repo-list-container {
             width: 90%;
             max-width: 600px;
-            height: 50vh; /* Max height for scrolling */
+            height: 55vh; /* Spacious height */
             margin: 20px auto;
             border: 2px solid var(--phosphor-dim);
             padding: 10px;
@@ -237,6 +250,7 @@
             text-align: left;
             background: rgba(0, 20, 0, 0.3);
             box-shadow: 0 0 15px rgba(51, 255, 0, 0.1);
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
         }
 
         /* Custom Retro Scrollbar */
@@ -285,8 +299,20 @@
         @media (max-width: 768px) {
             .side-data { font-size: 0.6rem; }
             .dvd-svg { width: 90%; }
-            .repo-item { font-size: 1rem; padding: 12px; }
+            .repo-item { font-size: 0.9rem; padding: 12px; } /* Slightly smaller text for mobile */
             .center-hud { width: 95%; }
+        }
+
+        /* Optimizations for 16:9 aspect ratio mobile devices */
+        @media (max-aspect-ratio: 16/9) and (max-width: 480px) {
+            .repo-list-container { height: 50vh; }
+            .repo-item { padding: 10px; font-size: 0.85rem; }
+        }
+
+        /* Optimizations for 20:9 and taller aspect ratio mobile devices */
+        @media (max-aspect-ratio: 20/9) and (min-aspect-ratio: 16/9) and (max-width: 480px) {
+            .repo-list-container { height: 60vh; }
+            .repo-item { padding: 12px; }
         }
 
     </style>
@@ -362,6 +388,12 @@
 
                     <!-- Sine wave simulation moved here -->
                     <canvas id="wave-canvas" width="300" height="40" class="mt-4 mx-auto opacity-70"></canvas>
+
+                    <!-- AUTHOR SIGNATURE -->
+                    <div class="mt-2 mb-2">
+                        <div class="text-[0.6rem] dim-text tracking-[0.5em] mb-1">//// SYS.ARCHITECT ////</div>
+                        <div class="author-signature pixel-font text-xl md:text-2xl tracking-widest">ANACONDY</div>
+                    </div>
                 </div>
 
             </div>
@@ -451,16 +483,28 @@
         let masterGain;
         
         const AudioEngine = {
-            init: function() {
+            init: async function() {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext();
                 
-                masterGain = audioCtx.createGain();
-                masterGain.gain.value = 0.3; 
-                masterGain.connect(audioCtx.destination);
-                
-                this.startAmbience();
-                this.playBootSound();
+                // Only create if not already existing
+                if (!audioCtx) {
+                    audioCtx = new AudioContext();
+                }
+
+                // MOBILE FIX: Always try to resume on user gesture
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
+
+                if (!masterGain) {
+                    masterGain = audioCtx.createGain();
+                    masterGain.gain.value = 0.3; 
+                    masterGain.connect(audioCtx.destination);
+                    
+                    // Only start loops if they haven't started (prevent doubling up)
+                    this.startAmbience();
+                    this.playBootSound();
+                }
             },
 
             startAmbience: function() {
@@ -501,7 +545,8 @@
             },
 
             playParticleSound: function(intensity) {
-                if (!audioCtx) return;
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+                
                 if (Math.random() > 0.3) return; 
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
@@ -517,7 +562,8 @@
             },
 
             playHoverSound: function() {
-                if (!audioCtx) return;
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+                
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'square';
@@ -548,18 +594,20 @@
         const repoScreen = document.getElementById('repo-screen');
         
         // --- START SEQUENCE ---
-        function startExperience() {
-            // 1. Remove overlay
+        async function startExperience() {
+            // 1. Init Audio (Await for resume if needed)
+            await AudioEngine.init();
+
+            // 2. Remove overlay
             startOverlay.style.opacity = '0';
             setTimeout(() => startOverlay.style.display = 'none', 500);
 
-            // 2. Init Audio & Particles
-            AudioEngine.init();
+            // 3. Init Particles & Render
             initParticles();
             animate();
             renderRepoList();
 
-            // 3. Play Intro (DVD Logo)
+            // 4. Play Intro (DVD Logo)
             introLayer.style.opacity = '1';
             document.getElementById('path1').classList.add('animate-draw');
             document.getElementById('path2').classList.add('animate-draw');
@@ -567,7 +615,7 @@
             document.getElementById('disc1').classList.add('animate-draw-delay');
             document.getElementById('disc2').classList.add('animate-draw-delay');
 
-            // 4. Transition to Splash Screen
+            // 5. Transition to Splash Screen
             setTimeout(() => {
                 introLayer.style.opacity = '0';
                 setTimeout(() => {
@@ -575,7 +623,7 @@
                     uiLayer.style.opacity = '1';
                     initWave(); 
                     
-                    // 5. Transition to Repo List (After 3 seconds on Splash)
+                    // 6. Transition to Repo List (After 3 seconds on Splash)
                     setTimeout(() => {
                         splashScreen.style.opacity = '0';
                         setTimeout(() => {
@@ -657,18 +705,32 @@
             mouse.x = x;
             mouse.y = y;
             mouse.active = true;
-            document.getElementById('coord-x').innerText = Math.floor(x).toString().padStart(3, '0');
-            document.getElementById('coord-y').innerText = Math.floor(y).toString().padStart(3, '0');
+            
+            if (document.getElementById('coord-x')) {
+                document.getElementById('coord-x').innerText = Math.floor(x).toString().padStart(3, '0');
+                document.getElementById('coord-y').innerText = Math.floor(y).toString().padStart(3, '0');
+            }
         };
 
         window.addEventListener('mousemove', (e) => updateMouse(e.x, e.y));
+        
+        // Mobile Touch Handling (Prevent Default to stop scrolling while touching canvas)
         window.addEventListener('touchmove', (e) => {
+            // Only prevent default if touching the canvas directly (not the list)
+            if(e.target === canvas) {
+                // e.preventDefault(); // Optional: uncomment if you want to block ALL scrolling on canvas
+            }
             updateMouse(e.touches[0].clientX, e.touches[0].clientY);
         }, {passive: false});
+
         window.addEventListener('touchstart', (e) => {
             lastMousePos.x = e.touches[0].clientX;
             lastMousePos.y = e.touches[0].clientY;
             updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+            // Resume audio context on touch if needed
+            if(audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
         }, {passive: false});
 
         window.addEventListener('touchend', () => { mouse.active = false; mouse.velocity = 0; });
@@ -761,15 +823,20 @@
             drawWave();
 
             setInterval(() => {
-                document.getElementById('fps-counter').innerText = Math.floor(58 + Math.random() * 4);
-                document.getElementById('mem-counter').innerText = Math.random() > 0.9 ? "BUSY" : "OK";
+                const fpsEl = document.getElementById('fps-counter');
+                if(fpsEl) fpsEl.innerText = Math.floor(58 + Math.random() * 4);
+                
+                const memEl = document.getElementById('mem-counter');
+                if(memEl) memEl.innerText = Math.random() > 0.9 ? "BUSY" : "OK";
             }, 500);
             
             const bar = document.getElementById('loading-bar');
             let width = 100;
             setInterval(() => {
-                width = (width + 5) % 100;
-                bar.style.width = width + '%';
+                if(bar) {
+                    width = (width + 5) % 100;
+                    bar.style.width = width + '%';
+                }
             }, 100);
         }
     </script>
