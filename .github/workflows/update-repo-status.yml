@@ -109,21 +109,19 @@ jobs:
                 console.log(`  Status changed: ${repo.status} -> ${status}`);
                 repo.status = status;
                 updated++;
+                
+                // Update date when status changes to active
+                if (status === 'active') {
+                  const currentDate = new Date().toISOString().split('T')[0];
+                  repo.date = currentDate;
+                  console.log(`  Date updated to: ${currentDate}`);
+                }
               } else {
                 console.log(`  Status unchanged: ${status}`);
               }
               
-              // Update date to current date if active
-              if (status === 'active') {
-                const currentDate = new Date().toISOString().split('T')[0];
-                if (repo.date !== currentDate) {
-                  repo.date = currentDate;
-                  console.log(`  Date updated to: ${currentDate}`);
-                }
-              }
-              
               // Small delay to avoid rate limiting
-              await delay(500);
+              await delay(200);
             }
             
             console.log(`\nUpdate complete. ${updated} repositories had status changes.`);
