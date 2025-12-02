@@ -78,7 +78,7 @@ jobs:
                 });
                 
                 res.on('end', () => {
-                  if (res.statusCode === 200) {
+                  if (res.statusCode >= 200 && res.statusCode < 300) {
                     try {
                       resolve(JSON.parse(data));
                     } catch (parseError) {
@@ -143,9 +143,12 @@ jobs:
             console.log('Discovering repositories from GitHub...');
             const allRepos = [];
             let page = 1;
+            const maxPages = 50; // Safety limit
             
-            while (true) {
+            while (page <= maxPages) {
               const repos = await githubApiRequest(`/orgs/${orgName}/repos?type=public&per_page=100&page=${page}`);
+              
+              if (!repos || repos.length === 0) break; // No more repos
               
               allRepos.push(...repos);
               console.log(`Fetched page ${page}: ${repos.length} repositories`);
@@ -167,12 +170,25 @@ jobs:
               return pages && (pages.status === 'built' || pages.status === 'building');
             } catch (error) {
               // Only return false for 404 (no GitHub Pages)
-              // For other errors (rate limiting, network issues), log and return true to be safe
+              // For rate limiting (403), retry after a delay
+              if (error.message && error.message.includes('403')) {
+                console.log(`  Rate limited on ${repoName}, waiting...`);
+                await delay(2000);
+                // Retry once
+                try {
+                  const pages = await githubApiRequest(`/repos/${orgName}/${repoName}/pages`);
+                  return pages && (pages.status === 'built' || pages.status === 'building');
+                } catch (retryError) {
+                  console.log(`  Retry failed for ${repoName}, skipping for safety`);
+                  return false;
+                }
+              }
               if (error.message && error.message.includes('404')) {
                 return false;
               }
-              console.log(`  Warning: Error checking Pages for ${repoName}: ${error.message}. Assuming has pages.`);
-              return true;
+              // For other errors, log and skip for safety
+              console.log(`  Error checking Pages for ${repoName}: ${error.message}. Skipping for safety.`);
+              return false;
             }
           }
           
@@ -259,13 +275,21 @@ jobs:
             // Sort by date descending (newest first)
             reposData.sort((a, b) => new Date(b.date) - new Date(a.date));
             
-            // Write updated data back to file
+            // Always write the file, even if no changes (ensures file consistency)
             fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
             console.log('repos.json updated successfully.');
+            
+            return { success: true, reposCount: reposData.length, newRepos };
           }
           
-          updateRepoStatuses().catch(error => {
-            console.error('Error updating repository statuses:', error);
+          updateRepoStatuses().then(result => {
+            console.log(`\nWorkflow completed successfully!`);
+            console.log(`Result: ${JSON.stringify(result)}`);
+            process.exit(0);
+          }).catch(error => {
+            console.error('Fatal error updating repository statuses:', error);
+            // Try to preserve any existing repos.json rather than leaving it corrupted
+            console.error('The workflow failed, but repos.json should still be in a valid state.');
             process.exit(1);
           });
           EOF
