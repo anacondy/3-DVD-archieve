@@ -52,6 +52,9 @@ jobs:
           const fs = require('fs');
           const https = require('https');
           
+          // Configuration
+          const orgName = 'anacondy';
+          
           // Function to make GitHub API requests
           function githubApiRequest(path) {
             return new Promise((resolve, reject) => {
@@ -138,7 +141,7 @@ jobs:
             let page = 1;
             
             while (true) {
-              const repos = await githubApiRequest(`/orgs/anacondy/repos?type=public&per_page=100&page=${page}`);
+              const repos = await githubApiRequest(`/orgs/${orgName}/repos?type=public&per_page=100&page=${page}`);
               
               if (repos.length === 0) break;
               
@@ -157,8 +160,9 @@ jobs:
           // Check if repository has GitHub Pages enabled
           async function hasGitHubPages(repoName) {
             try {
-              const pages = await githubApiRequest(`/repos/anacondy/${repoName}/pages`);
-              return pages && pages.status === 'built';
+              const pages = await githubApiRequest(`/repos/${orgName}/${repoName}/pages`);
+              // Accept pages that are built or building
+              return pages && (pages.status === 'built' || pages.status === 'building');
             } catch (error) {
               // 404 means no GitHub Pages
               return false;
@@ -201,7 +205,7 @@ jobs:
               
               console.log(`  GitHub Pages enabled!`);
               
-              const url = `https://anacondy.github.io/${repo.name}/`;
+              const url = `https://${orgName}.github.io/${repo.name}/`;
               
               // Check if repo exists in our current data
               const existingRepo = existingRepos[repo.name];
@@ -211,18 +215,19 @@ jobs:
                 const status = await checkUrl(url);
                 console.log(`  Status: ${status}`);
                 
+                // Determine the date to use
+                let repoDate = existingRepo.date;
+                if (status === 'active' && existingRepo.status !== 'active') {
+                  repoDate = new Date().toISOString().split('T')[0];
+                  console.log(`  Date updated!`);
+                }
+                
                 reposData.push({
                   name: repo.name,
                   url: url,
-                  date: existingRepo.date,
+                  date: repoDate,
                   status: status
                 });
-                
-                // Update date if status changed to active
-                if (status === 'active' && existingRepo.status !== 'active') {
-                  reposData[reposData.length - 1].date = new Date().toISOString().split('T')[0];
-                  console.log(`  Date updated!`);
-                }
               } else {
                 // New repository discovered
                 const status = await checkUrl(url);
