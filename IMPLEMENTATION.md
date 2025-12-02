@@ -157,7 +157,7 @@ schedule:
 
 ## Recent Enhancements
 
-✅ **Auto-Discovery** (December 2024)
+✅ **Auto-Discovery** (December 2025)
 - Workflow now automatically discovers all repositories with GitHub Pages
 - No manual repo.json editing required
 - Uses GitHub API to fetch organization repositories

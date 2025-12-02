@@ -79,7 +79,11 @@ jobs:
                 
                 res.on('end', () => {
                   if (res.statusCode === 200) {
-                    resolve(JSON.parse(data));
+                    try {
+                      resolve(JSON.parse(data));
+                    } catch (parseError) {
+                      reject(new Error(`Failed to parse JSON response: ${parseError.message}`));
+                    }
                   } else {
                     reject(new Error(`GitHub API returned status ${res.statusCode}: ${data}`));
                   }
@@ -143,12 +147,10 @@ jobs:
             while (true) {
               const repos = await githubApiRequest(`/orgs/${orgName}/repos?type=public&per_page=100&page=${page}`);
               
-              if (repos.length === 0) break;
-              
               allRepos.push(...repos);
               console.log(`Fetched page ${page}: ${repos.length} repositories`);
               
-              if (repos.length < 100) break; // Last page
+              if (repos.length < 100) break; // Last page (includes empty pages)
               page++;
               await delay(200); // Rate limiting
             }
@@ -164,8 +166,13 @@ jobs:
               // Accept pages that are built or building
               return pages && (pages.status === 'built' || pages.status === 'building');
             } catch (error) {
-              // 404 means no GitHub Pages
-              return false;
+              // Only return false for 404 (no GitHub Pages)
+              // For other errors (rate limiting, network issues), log and return true to be safe
+              if (error.message && error.message.includes('404')) {
+                return false;
+              }
+              console.log(`  Warning: Error checking Pages for ${repoName}: ${error.message}. Assuming has pages.`);
+              return true;
             }
           }
           
