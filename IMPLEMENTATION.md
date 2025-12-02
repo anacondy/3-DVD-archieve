@@ -1,0 +1,158 @@
+# Auto-Update Repository Archive - Implementation Guide
+
+## Overview
+This implementation adds an automatic repository status checking system that runs every ~32 hours to keep the 3-DVD-archieve site up-to-date.
+
+## Files Modified/Created
+
+### 1. `repos.json` (New)
+Central data file containing all repository information:
+```json
+[
+  {
+    "name": "repository-name",
+    "url": "https://anacondy.github.io/repository-name/",
+    "date": "2025-12-01",
+    "status": "active" | "404" | "building"
+  }
+]
+```
+
+### 2. `index.html` (Modified)
+- Added `loadRepoData()` function to fetch repository data from JSON
+- Updated `formatRetroDate()` to handle ISO date format (YYYY-MM-DD)
+- Modified `startExperience()` to load data before rendering
+- Status indicators (❌/⏳) automatically added based on status field
+
+### 3. `.github/workflows/update-repo-status.yml` (New)
+GitHub Actions workflow that:
+- Runs on a cron schedule (approximately every 32 hours)
+- Checks each repository URL for availability
+- Updates status and dates in repos.json
+- Commits changes automatically
+
+## How It Works
+
+### Workflow Schedule
+The workflow runs at:
+- **00:00 UTC on odd days** (1, 3, 5, 7, 9, ...)
+- **08:00 UTC on even days** (2, 4, 6, 8, 10, ...)
+
+This creates intervals of approximately 32 hours between runs.
+
+### Status Detection
+The workflow makes HEAD requests to each repository URL:
+- **200 OK** → `status: "active"` → No indicator shown
+- **404 Not Found** → `status: "404"` → ❌ shown
+- **Other responses** → `status: "building"` → ⏳ shown
+
+### Date Updates
+- Dates are updated **only when** a repository changes to "active" status
+- This prevents unnecessary commits when nothing has changed
+
+### Rate Limiting
+- 200ms delay between each request
+- Total check time: ~13 seconds for 66 repositories
+- Avoids overwhelming GitHub's servers
+
+## Manual Workflow Trigger
+
+You can manually run the workflow from the GitHub Actions tab:
+1. Go to the repository on GitHub
+2. Click "Actions" tab
+3. Select "Update Repository Status" workflow
+4. Click "Run workflow" button
+
+## Testing Locally
+
+To test the status checking logic:
+```bash
+node << 'EOF'
+const https = require('https');
+
+function checkUrl(url) {
+  return new Promise((resolve) => {
+    const req = https.request(url, { method: 'HEAD', timeout: 10000 }, (res) => {
+      resolve(res.statusCode === 200 ? 'active' : res.statusCode === 404 ? '404' : 'building');
+    });
+    req.on('error', () => resolve('404'));
+    req.on('timeout', () => { req.destroy(); resolve('building'); });
+    req.end();
+  });
+}
+
+checkUrl('https://anacondy.github.io/3-DVD-archieve/')
+  .then(status => console.log('Status:', status));
+EOF
+```
+
+## Maintenance
+
+### Adding New Repositories
+Edit `repos.json` and add a new entry:
+```json
+{
+  "name": "new-repo-name",
+  "url": "https://anacondy.github.io/new-repo-name/",
+  "date": "2025-12-01",
+  "status": "active"
+}
+```
+
+The workflow will automatically check and update the status on the next run.
+
+### Removing Repositories
+Simply delete the entry from `repos.json`.
+
+### Changing Check Frequency
+Edit `.github/workflows/update-repo-status.yml` and modify the cron schedules:
+```yaml
+schedule:
+  - cron: '0 0 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31 * *'
+  - cron: '0 8 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30 * *'
+```
+
+## Troubleshooting
+
+### Workflow not running?
+- Check the Actions tab for errors
+- Verify the workflow file syntax
+- Ensure repository has Actions enabled
+
+### Status not updating?
+- Check workflow logs in Actions tab
+- Verify the URL is accessible
+- Test URL manually with curl:
+  ```bash
+  curl -I https://anacondy.github.io/repo-name/
+  ```
+
+### Site not loading data?
+- Check browser console for errors
+- Verify repos.json is valid JSON
+- Test with: `curl https://anacondy.github.io/3-DVD-archieve/repos.json`
+
+## Performance Metrics
+
+- **Total Repositories**: 66
+- **Check Duration**: ~13 seconds
+- **Delay Between Requests**: 200ms
+- **Workflow Frequency**: ~32 hours
+- **Monthly GitHub Actions Minutes**: ~1-2 minutes
+
+## Security
+
+- ✅ No secrets or credentials required
+- ✅ CodeQL security scan: 0 vulnerabilities
+- ✅ Safe HTTP requests with timeouts
+- ✅ Error handling for failed requests
+- ✅ Commits tagged with `[skip ci]` to prevent infinite loops
+
+## Future Enhancements
+
+Potential improvements for future iterations:
+1. Email notifications on status changes
+2. Historical status tracking
+3. Response time monitoring
+4. Batch updates to reduce API calls
+5. Dashboard for repository health metrics

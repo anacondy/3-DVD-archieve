@@ -1,0 +1,152 @@
+name: Update Repository Status
+
+on:
+  schedule:
+    # Run at 00:00 UTC on odd days and 08:00 UTC on even days
+    # This creates approximately 32-hour intervals
+    - cron: '0 0 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31 * *'  # 00:00 on odd days
+    - cron: '0 8 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30 * *'    # 08:00 on even days
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Check last update time and skip if too recent
+        id: check_time
+        run: |
+          if [ -f .last_update ]; then
+            last_update=$(cat .last_update)
+            current_time=$(date +%s)
+            time_diff=$((current_time - last_update))
+            hours_diff=$((time_diff / 3600))
+            
+            if [ $hours_diff -lt 30 ]; then
+              echo "Last update was $hours_diff hours ago. Skipping..."
+              echo "should_run=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          
+          echo "should_run=true" >> $GITHUB_OUTPUT
+          date +%s > .last_update
+          
+      - name: Check repository status and update JSON
+        if: steps.check_time.outputs.should_run == 'true'
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const https = require('https');
+          
+          // Read current repos.json
+          const reposData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+          
+          // Function to check if URL is accessible
+          function checkUrl(url) {
+            return new Promise((resolve) => {
+              const options = {
+                method: 'HEAD',
+                timeout: 10000,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; RepoStatusChecker/1.0)'
+                }
+              };
+              
+              const req = https.request(url, options, (res) => {
+                if (res.statusCode === 200) {
+                  resolve('active');
+                } else if (res.statusCode === 404) {
+                  resolve('404');
+                } else {
+                  // Other status codes might indicate building or temporary issues
+                  resolve('building');
+                }
+              });
+              
+              req.on('error', () => {
+                resolve('404');
+              });
+              
+              req.on('timeout', () => {
+                req.destroy();
+                resolve('building');
+              });
+              
+              req.end();
+            });
+          }
+          
+          // Function to delay between requests
+          function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+          }
+          
+          // Main update function
+          async function updateRepoStatuses() {
+            console.log('Starting repository status check...');
+            let updated = 0;
+            
+            for (let i = 0; i < reposData.length; i++) {
+              const repo = reposData[i];
+              console.log(`Checking ${repo.name} (${i + 1}/${reposData.length})...`);
+              
+              const status = await checkUrl(repo.url);
+              
+              // Update status if changed
+              if (repo.status !== status) {
+                console.log(`  Status changed: ${repo.status} -> ${status}`);
+                repo.status = status;
+                updated++;
+                
+                // Update date when status changes to active
+                if (status === 'active') {
+                  const currentDate = new Date().toISOString().split('T')[0];
+                  repo.date = currentDate;
+                  console.log(`  Date updated to: ${currentDate}`);
+                }
+              } else {
+                console.log(`  Status unchanged: ${status}`);
+              }
+              
+              // Small delay to avoid rate limiting
+              await delay(200);
+            }
+            
+            console.log(`\nUpdate complete. ${updated} repositories had status changes.`);
+            
+            // Write updated data back to file
+            fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
+            console.log('repos.json updated successfully.');
+          }
+          
+          updateRepoStatuses().catch(error => {
+            console.error('Error updating repository statuses:', error);
+            process.exit(1);
+          });
+          EOF
+          
+      - name: Commit and push if changed
+        if: steps.check_time.outputs.should_run == 'true'
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add repos.json .last_update
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update repository status [skip ci]"
+            git push
+            echo "Changes committed and pushed"
+          fi
