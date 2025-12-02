@@ -27,6 +27,7 @@ Central data file containing all repository information:
 ### 3. `.github/workflows/update-repo-status.yml` (New)
 GitHub Actions workflow that:
 - Runs on a cron schedule (approximately every 32 hours)
+- **Automatically discovers all public repositories** with GitHub Pages enabled
 - Checks each repository URL for availability
 - Updates status and dates in repos.json
 - Commits changes automatically
@@ -40,6 +41,13 @@ The workflow runs at:
 
 This creates intervals of approximately 32 hours between runs.
 
+### Auto-Discovery Process
+The workflow automatically discovers repositories by:
+1. **Fetching all public repositories** from the anacondy organization via GitHub API
+2. **Checking GitHub Pages status** for each repository using the GitHub Pages API
+3. **Adding new repositories** with GitHub Pages to the list automatically
+4. **Preserving existing data** for repositories that were previously discovered
+
 ### Status Detection
 The workflow makes HEAD requests to each repository URL:
 - **200 OK** → `status: "active"` → No indicator shown
@@ -47,6 +55,7 @@ The workflow makes HEAD requests to each repository URL:
 - **Other responses** → `status: "building"` → ⏳ shown
 
 ### Date Updates
+- Dates are set to the current date when a **new repository is discovered**
 - Dates are updated **only when** a repository changes to "active" status
 - This prevents unnecessary commits when nothing has changed
 
@@ -89,20 +98,17 @@ EOF
 ## Maintenance
 
 ### Adding New Repositories
-Edit `repos.json` and add a new entry:
-```json
-{
-  "name": "new-repo-name",
-  "url": "https://anacondy.github.io/new-repo-name/",
-  "date": "2025-12-01",
-  "status": "active"
-}
-```
+**No manual intervention required!** The workflow automatically discovers new repositories with GitHub Pages enabled. Simply:
+1. Enable GitHub Pages on your repository
+2. Wait for the next workflow run (~32 hours)
+3. The repository will appear on the site automatically
 
-The workflow will automatically check and update the status on the next run.
+Alternatively, you can trigger the workflow manually from the GitHub Actions tab for immediate discovery.
 
 ### Removing Repositories
-Simply delete the entry from `repos.json`.
+Repositories are automatically discovered based on GitHub Pages status. If you disable GitHub Pages on a repository:
+1. The repository will remain in `repos.json` with its last known status
+2. To completely remove it, manually delete the entry from `repos.json`
 
 ### Changing Check Frequency
 Edit `.github/workflows/update-repo-status.yml` and modify the cron schedules:
@@ -134,11 +140,12 @@ schedule:
 
 ## Performance Metrics
 
-- **Total Repositories**: 66
-- **Check Duration**: ~13 seconds
+- **Total Repositories**: Auto-discovered (currently ~66)
+- **Discovery Duration**: ~30-60 seconds (depends on total repo count)
+- **Check Duration**: ~13 seconds per 66 repositories
 - **Delay Between Requests**: 200ms
 - **Workflow Frequency**: ~32 hours
-- **Monthly GitHub Actions Minutes**: ~1-2 minutes
+- **Monthly GitHub Actions Minutes**: ~2-3 minutes
 
 ## Security
 
@@ -148,6 +155,14 @@ schedule:
 - ✅ Error handling for failed requests
 - ✅ Commits tagged with `[skip ci]` to prevent infinite loops
 
+## Recent Enhancements
+
+✅ **Auto-Discovery** (December 2025)
+- Workflow now automatically discovers all repositories with GitHub Pages
+- No manual repo.json editing required
+- Uses GitHub API to fetch organization repositories
+- Checks GitHub Pages status for each repository
+
 ## Future Enhancements
 
 Potential improvements for future iterations:
@@ -156,3 +171,4 @@ Potential improvements for future iterations:
 3. Response time monitoring
 4. Batch updates to reduce API calls
 5. Dashboard for repository health metrics
+6. Filtering by topics or labels

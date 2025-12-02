@@ -43,15 +43,53 @@ jobs:
           echo "should_run=true" >> $GITHUB_OUTPUT
           date +%s > .last_update
           
-      - name: Check repository status and update JSON
+      - name: Discover and update repositories
         if: steps.check_time.outputs.should_run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node << 'EOF'
           const fs = require('fs');
           const https = require('https');
           
-          // Read current repos.json
-          const reposData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+          // Function to make GitHub API requests
+          function githubApiRequest(path) {
+            return new Promise((resolve, reject) => {
+              const options = {
+                hostname: 'api.github.com',
+                path: path,
+                method: 'GET',
+                headers: {
+                  'User-Agent': 'RepoStatusChecker/1.0',
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+              };
+              
+              const req = https.request(options, (res) => {
+                let data = '';
+                
+                res.on('data', (chunk) => {
+                  data += chunk;
+                });
+                
+                res.on('end', () => {
+                  if (res.statusCode === 200) {
+                    resolve(JSON.parse(data));
+                  } else {
+                    reject(new Error(`GitHub API returned status ${res.statusCode}: ${data}`));
+                  }
+                });
+              });
+              
+              req.on('error', (error) => {
+                reject(error);
+              });
+              
+              req.end();
+            });
+          }
           
           // Function to check if URL is accessible
           function checkUrl(url) {
@@ -93,38 +131,121 @@ jobs:
             return new Promise(resolve => setTimeout(resolve, ms));
           }
           
-          // Main update function
-          async function updateRepoStatuses() {
-            console.log('Starting repository status check...');
-            let updated = 0;
+          // Fetch all public repositories from the organization
+          async function discoverRepositories() {
+            console.log('Discovering repositories from GitHub...');
+            const allRepos = [];
+            let page = 1;
             
-            for (let i = 0; i < reposData.length; i++) {
-              const repo = reposData[i];
-              console.log(`Checking ${repo.name} (${i + 1}/${reposData.length})...`);
+            while (true) {
+              const repos = await githubApiRequest(`/orgs/anacondy/repos?type=public&per_page=100&page=${page}`);
               
-              const status = await checkUrl(repo.url);
+              if (repos.length === 0) break;
               
-              // Update status if changed
-              if (repo.status !== status) {
-                console.log(`  Status changed: ${repo.status} -> ${status}`);
-                repo.status = status;
-                updated++;
-                
-                // Update date when status changes to active
-                if (status === 'active') {
-                  const currentDate = new Date().toISOString().split('T')[0];
-                  repo.date = currentDate;
-                  console.log(`  Date updated to: ${currentDate}`);
-                }
-              } else {
-                console.log(`  Status unchanged: ${status}`);
-              }
+              allRepos.push(...repos);
+              console.log(`Fetched page ${page}: ${repos.length} repositories`);
               
-              // Small delay to avoid rate limiting
-              await delay(200);
+              if (repos.length < 100) break; // Last page
+              page++;
+              await delay(200); // Rate limiting
             }
             
-            console.log(`\nUpdate complete. ${updated} repositories had status changes.`);
+            console.log(`Total repositories found: ${allRepos.length}`);
+            return allRepos;
+          }
+          
+          // Check if repository has GitHub Pages enabled
+          async function hasGitHubPages(repoName) {
+            try {
+              const pages = await githubApiRequest(`/repos/anacondy/${repoName}/pages`);
+              return pages && pages.status === 'built';
+            } catch (error) {
+              // 404 means no GitHub Pages
+              return false;
+            }
+          }
+          
+          // Main update function
+          async function updateRepoStatuses() {
+            // Discover all repositories
+            const allRepos = await discoverRepositories();
+            
+            // Read current repos.json to preserve existing data
+            let existingRepos = {};
+            try {
+              const existingData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+              existingData.forEach(repo => {
+                existingRepos[repo.name] = repo;
+              });
+            } catch (error) {
+              console.log('No existing repos.json found, starting fresh.');
+            }
+            
+            const reposData = [];
+            let newRepos = 0;
+            
+            console.log('\nChecking repositories for GitHub Pages...');
+            
+            for (let i = 0; i < allRepos.length; i++) {
+              const repo = allRepos[i];
+              console.log(`[${i + 1}/${allRepos.length}] Checking ${repo.name}...`);
+              
+              // Check if GitHub Pages is enabled
+              const pagesEnabled = await hasGitHubPages(repo.name);
+              await delay(200); // Rate limiting
+              
+              if (!pagesEnabled) {
+                console.log(`  No GitHub Pages enabled, skipping.`);
+                continue;
+              }
+              
+              console.log(`  GitHub Pages enabled!`);
+              
+              const url = `https://anacondy.github.io/${repo.name}/`;
+              
+              // Check if repo exists in our current data
+              const existingRepo = existingRepos[repo.name];
+              
+              if (existingRepo) {
+                // Check status
+                const status = await checkUrl(url);
+                console.log(`  Status: ${status}`);
+                
+                reposData.push({
+                  name: repo.name,
+                  url: url,
+                  date: existingRepo.date,
+                  status: status
+                });
+                
+                // Update date if status changed to active
+                if (status === 'active' && existingRepo.status !== 'active') {
+                  reposData[reposData.length - 1].date = new Date().toISOString().split('T')[0];
+                  console.log(`  Date updated!`);
+                }
+              } else {
+                // New repository discovered
+                const status = await checkUrl(url);
+                console.log(`  NEW repository! Status: ${status}`);
+                
+                reposData.push({
+                  name: repo.name,
+                  url: url,
+                  date: new Date().toISOString().split('T')[0],
+                  status: status
+                });
+                newRepos++;
+              }
+              
+              await delay(200); // Rate limiting
+            }
+            
+            console.log(`\nDiscovery complete!`);
+            console.log(`Total repositories with GitHub Pages: ${reposData.length}`);
+            console.log(`New repositories discovered: ${newRepos}`);
+            
+            // Sort by date descending (newest first)
+            reposData.sort((a, b) => new Date(b.date) - new Date(a.date));
             
             // Write updated data back to file
             fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
