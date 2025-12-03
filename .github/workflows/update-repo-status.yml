@@ -202,9 +202,10 @@ jobs:
             
             // Read current repos.json to preserve existing data
             let existingRepos = {};
+            let existingReposList = [];
             try {
-              const existingData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
-              existingData.forEach(repo => {
+              existingReposList = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+              existingReposList.forEach(repo => {
                 existingRepos[repo.name] = repo;
               });
             } catch (error) {
@@ -212,7 +213,13 @@ jobs:
             }
             
             const reposData = [];
-            let newRepos = 0;
+            const changeLog = {
+              added: [],
+              deleted: [],
+              statusChanged: [],
+              dateUpdated: [],
+              errors: []
+            };
             
             console.log('\nChecking repositories for GitHub Pages...');
             
@@ -241,10 +248,38 @@ jobs:
                 const status = await checkUrl(url);
                 console.log(`  Status: ${status}`);
                 
+                // Track status changes
+                if (existingRepo.status !== status) {
+                  changeLog.statusChanged.push({
+                    name: repo.name,
+                    url: url,
+                    oldStatus: existingRepo.status,
+                    newStatus: status,
+                    date: existingRepo.date
+                  });
+                  
+                  // Track errors if status changed to error state
+                  if (status === '404' || status === 'building') {
+                    changeLog.errors.push({
+                      name: repo.name,
+                      url: url,
+                      status: status,
+                      date: existingRepo.date
+                    });
+                  }
+                }
+                
                 // Determine the date to use
                 let repoDate = existingRepo.date;
                 if (status === 'active' && existingRepo.status !== 'active') {
                   repoDate = new Date().toISOString().split('T')[0];
+                  changeLog.dateUpdated.push({
+                    name: repo.name,
+                    url: url,
+                    oldDate: existingRepo.date,
+                    newDate: repoDate,
+                    status: status
+                  });
                   console.log(`  Date updated!`);
                 }
                 
@@ -254,36 +289,146 @@ jobs:
                   date: repoDate,
                   status: status
                 });
+                
+                // Mark as processed
+                delete existingRepos[repo.name];
               } else {
                 // New repository discovered
                 const status = await checkUrl(url);
                 console.log(`  NEW repository! Status: ${status}`);
                 
+                const newDate = new Date().toISOString().split('T')[0];
+                
+                changeLog.added.push({
+                  name: repo.name,
+                  url: url,
+                  status: status,
+                  date: newDate
+                });
+                
                 reposData.push({
                   name: repo.name,
                   url: url,
-                  date: new Date().toISOString().split('T')[0],
+                  date: newDate,
                   status: status
                 });
-                newRepos++;
               }
               
               await delay(200); // Rate limiting
             }
             
+            // Check for deleted repositories (existed before but not found now)
+            for (const repoName in existingRepos) {
+              const repo = existingRepos[repoName];
+              changeLog.deleted.push({
+                name: repo.name,
+                url: repo.url,
+                status: repo.status,
+                date: repo.date
+              });
+            }
+            
             console.log(`\nDiscovery complete!`);
             console.log(`Total repositories with GitHub Pages: ${reposData.length}`);
-            console.log(`New repositories discovered: ${newRepos}`);
+            console.log(`New repositories discovered: ${changeLog.added.length}`);
+            console.log(`Repositories removed: ${changeLog.deleted.length}`);
+            console.log(`Status changes: ${changeLog.statusChanged.length}`);
             
             // Sort by date descending (newest first)
             // Using string comparison since dates are in ISO format (YYYY-MM-DD)
             reposData.sort((a, b) => b.date.localeCompare(a.date));
             
+            // Generate changelog markdown
+            const changelog = generateChangelogTable(changeLog);
+            
             // Always write the file, even if no changes (ensures file consistency)
             fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
-            console.log('repos.json updated successfully.');
+            fs.writeFileSync('CHANGELOG.md', changelog);
+            console.log('repos.json and CHANGELOG.md updated successfully.');
             
-            return { success: true, reposCount: reposData.length, newRepos };
+            return { 
+              success: true, 
+              reposCount: reposData.length, 
+              changeLog: changeLog,
+              hasChanges: changeLog.added.length > 0 || changeLog.deleted.length > 0 || 
+                         changeLog.statusChanged.length > 0 || changeLog.dateUpdated.length > 0
+            };
+          }
+          
+          // Generate a markdown table for the changelog
+          function generateChangelogTable(changeLog) {
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+            let markdown = `# Repository Update Log\n\n`;
+            markdown += `**Last Updated:** ${timestamp}\n\n`;
+            markdown += `## Summary\n\n`;
+            markdown += `- **Repositories Added:** ${changeLog.added.length}\n`;
+            markdown += `- **Repositories Deleted:** ${changeLog.deleted.length}\n`;
+            markdown += `- **Status Changes:** ${changeLog.statusChanged.length}\n`;
+            markdown += `- **Date Updates:** ${changeLog.dateUpdated.length}\n`;
+            markdown += `- **Errors/Issues:** ${changeLog.errors.length}\n\n`;
+            
+            if (changeLog.added.length > 0) {
+              markdown += `## 🆕 Repositories Added\n\n`;
+              markdown += `| Repository | URL | Status | Date Added |\n`;
+              markdown += `|------------|-----|--------|------------|\n`;
+              changeLog.added.forEach(repo => {
+                const statusIcon = repo.status === 'active' ? '✅' : repo.status === '404' ? '❌' : '⏳';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${statusIcon} ${repo.status} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.deleted.length > 0) {
+              markdown += `## 🗑️ Repositories Deleted\n\n`;
+              markdown += `| Repository | URL | Previous Status | Last Known Date |\n`;
+              markdown += `|------------|-----|-----------------|----------------|\n`;
+              changeLog.deleted.forEach(repo => {
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${repo.status} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.statusChanged.length > 0) {
+              markdown += `## 🔄 Status Changes\n\n`;
+              markdown += `| Repository | URL | Old Status | New Status | Date |\n`;
+              markdown += `|------------|-----|------------|------------|------|\n`;
+              changeLog.statusChanged.forEach(repo => {
+                const oldIcon = repo.oldStatus === 'active' ? '✅' : repo.oldStatus === '404' ? '❌' : '⏳';
+                const newIcon = repo.newStatus === 'active' ? '✅' : repo.newStatus === '404' ? '❌' : '⏳';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${oldIcon} ${repo.oldStatus} | ${newIcon} ${repo.newStatus} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.dateUpdated.length > 0) {
+              markdown += `## 📅 Date Updates\n\n`;
+              markdown += `| Repository | URL | Old Date | New Date | Status |\n`;
+              markdown += `|------------|-----|----------|----------|--------|\n`;
+              changeLog.dateUpdated.forEach(repo => {
+                const statusIcon = repo.status === 'active' ? '✅' : repo.status === '404' ? '❌' : '⏳';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${repo.oldDate} | ${repo.newDate} | ${statusIcon} ${repo.status} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.errors.length > 0) {
+              markdown += `## ⚠️ Errors/Issues\n\n`;
+              markdown += `| Repository | URL | Issue | Date |\n`;
+              markdown += `|------------|-----|-------|------|\n`;
+              changeLog.errors.forEach(repo => {
+                const issue = repo.status === '404' ? 'Not Found (404)' : 'Building/Unavailable';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${issue} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.added.length === 0 && changeLog.deleted.length === 0 && 
+                changeLog.statusChanged.length === 0 && changeLog.dateUpdated.length === 0) {
+              markdown += `## ℹ️ No Changes\n\n`;
+              markdown += `No repositories were added, deleted, or had status changes during this update.\n\n`;
+            }
+            
+            return markdown;
           }
           
           updateRepoStatuses().then(result => {
@@ -303,11 +448,21 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add repos.json .last_update
+          git add repos.json CHANGELOG.md .last_update
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Auto-update repository status [skip ci]"
+            # Create commit message with summary
+            echo "Auto-update repository status [skip ci]" > /tmp/commit-msg.txt
+            echo "" >> /tmp/commit-msg.txt
+            
+            # Extract summary from CHANGELOG.md if it exists
+            if [ -f CHANGELOG.md ]; then
+              echo "Summary of changes:" >> /tmp/commit-msg.txt
+              grep "^- \*\*" CHANGELOG.md | head -5 >> /tmp/commit-msg.txt
+            fi
+            
+            git commit -F /tmp/commit-msg.txt
             git push
             echo "Changes committed and pushed"
           fi

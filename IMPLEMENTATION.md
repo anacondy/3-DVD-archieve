@@ -30,7 +30,18 @@ GitHub Actions workflow that:
 - **Automatically discovers all public repositories** with GitHub Pages enabled
 - Checks each repository URL for availability
 - Updates status and dates in repos.json
+- **Generates detailed changelog** with tables showing all changes
 - Commits changes automatically
+
+### 4. `CHANGELOG.md` (Auto-generated)
+Automatically generated file that tracks all repository updates:
+- 🆕 Repositories added
+- 🗑️ Repositories deleted (no longer have GitHub Pages)
+- 🔄 Status changes (active ↔ 404 ↔ building)
+- 📅 Date updates (when repositories become active)
+- ⚠️ Errors/Issues detected
+
+Each section includes a markdown table with repository details, URLs, statuses, and dates.
 
 ## How It Works
 
@@ -58,6 +69,19 @@ The workflow makes HEAD requests to each repository URL:
 - Dates are set to the current date when a **new repository is discovered**
 - Dates are updated **only when** a repository changes to "active" status
 - This prevents unnecessary commits when nothing has changed
+
+### Change Tracking & Reporting
+Every workflow run generates a detailed `CHANGELOG.md` file with:
+- **Summary statistics** (repositories added, deleted, status changes, etc.)
+- **Tables for each change type**:
+  - 🆕 New repositories added (with URL, status, and date)
+  - 🗑️ Repositories deleted (repositories that no longer have GitHub Pages)
+  - 🔄 Status changes (showing old → new status transitions)
+  - 📅 Date updates (when repositories become active)
+  - ⚠️ Errors/Issues (repositories with 404 or building status)
+- **Commit message includes** a summary of changes made
+
+This provides full transparency on what the automation did during each run.
 
 ### Rate Limiting
 - 200ms delay between each request

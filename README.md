@@ -21,6 +21,8 @@ A retro DVD-style interface for browsing the Anacondy archive collection.
 - 🎨 Animated ANACONDY signature with glowing pulse effect
 - 📅 Archive entries with proper date formatting
 - 🖱️ Touch-friendly scrolling and interactions
+- 🤖 **Automated repository discovery** - updates every ~32 hours
+- 📊 **Change tracking** - see what's new in [CHANGELOG.md](CHANGELOG.md)
 
 ## Author
 
