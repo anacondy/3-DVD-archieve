@@ -2,10 +2,21 @@ name: Update Repository Status
 
 on:
   schedule:
-    # Run at 00:00 UTC on odd days and 08:00 UTC on even days
-    # This creates approximately 32-hour intervals
-    - cron: '0 0 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31 * *'  # 00:00 on odd days
-    - cron: '0 8 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30 * *'    # 08:00 on even days
+    # Run every 17 hours - workflow executes at these times:
+    # Day 1: 00:00, 17:00 UTC
+    # Day 2: 10:00 UTC
+    # Day 3: 03:00, 20:00 UTC
+    # Day 4: 13:00 UTC
+    # Day 5: 06:00, 23:00 UTC
+    # Day 6: 16:00 UTC
+    # Day 7: 09:00 UTC (pattern repeats weekly)
+    - cron: '0 0,17 * * 1,3,5,7'    # 00:00 and 17:00 UTC on Mon, Wed, Fri, Sun
+    - cron: '0 10 * * 2,6'          # 10:00 UTC on Tue, Sat
+    - cron: '0 3,20 * * 3'          # 03:00 and 20:00 UTC on Wed
+    - cron: '0 13 * * 4'            # 13:00 UTC on Thu
+    - cron: '0 6,23 * * 5'          # 06:00 and 23:00 UTC on Fri
+    - cron: '0 16 * * 6'            # 16:00 UTC on Sat
+    - cron: '0 9 * * 0'             # 09:00 UTC on Sun
   workflow_dispatch: # Allow manual trigger
 
 permissions:

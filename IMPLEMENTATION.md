@@ -46,11 +46,16 @@ Each section includes a markdown table with repository details, URLs, statuses, 
 ## How It Works
 
 ### Workflow Schedule
-The workflow runs at:
-- **00:00 UTC on odd days** (1, 3, 5, 7, 9, ...)
-- **08:00 UTC on even days** (2, 4, 6, 8, 10, ...)
+The workflow runs **every 17 hours** throughout the week:
+- **Monday**: 00:00, 17:00 UTC
+- **Tuesday**: 10:00 UTC
+- **Wednesday**: 03:00, 20:00 UTC
+- **Thursday**: 13:00 UTC
+- **Friday**: 06:00, 23:00 UTC
+- **Saturday**: 16:00 UTC
+- **Sunday**: 09:00 UTC
 
-This creates intervals of approximately 32 hours between runs.
+This creates a consistent 17-hour interval between runs, resulting in approximately **10 updates per week** (compared to the previous ~5 updates per week with 32-hour intervals).
 
 ### Auto-Discovery Process
 The workflow automatically discovers repositories by:
@@ -135,11 +140,12 @@ Repositories are automatically discovered based on GitHub Pages status. If you d
 2. To completely remove it, manually delete the entry from `repos.json`
 
 ### Changing Check Frequency
-Edit `.github/workflows/update-repo-status.yml` and modify the cron schedules:
+Edit `.github/workflows/update-repo-status.yml` and modify the cron schedules. Current schedule runs every 17 hours:
 ```yaml
 schedule:
-  - cron: '0 0 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31 * *'
-  - cron: '0 8 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30 * *'
+  - cron: '0 0,17 * * 1,3,5,7'    # 00:00 and 17:00 UTC on Mon, Wed, Fri, Sun
+  - cron: '0 10 * * 2,6'          # 10:00 UTC on Tue, Sat
+  # ... (see workflow file for complete schedule)
 ```
 
 ## Troubleshooting
@@ -168,8 +174,8 @@ schedule:
 - **Discovery Duration**: ~30-60 seconds (depends on total repo count)
 - **Check Duration**: ~13 seconds per 66 repositories
 - **Delay Between Requests**: 200ms
-- **Workflow Frequency**: ~32 hours
-- **Monthly GitHub Actions Minutes**: ~2-3 minutes
+- **Workflow Frequency**: Every 17 hours (~10 runs per week)
+- **Monthly GitHub Actions Minutes**: ~4-5 minutes (increased from 2-3 with previous 32-hour schedule)
 
 ## Security
 
