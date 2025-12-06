@@ -1,6 +1,6 @@
 name: Update Repository Status
 
-on:
+'on':
   schedule:
     # Run every 17 hours - workflow executes at these times:
     # Day 1: 00:00, 17:00 UTC
