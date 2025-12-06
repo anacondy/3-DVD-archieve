@@ -2,10 +2,21 @@ name: Update Repository Status
 
 on:
   schedule:
-    # Run at 00:00 UTC on odd days and 08:00 UTC on even days
-    # This creates approximately 32-hour intervals
-    - cron: '0 0 1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31 * *'  # 00:00 on odd days
-    - cron: '0 8 2,4,6,8,10,12,14,16,18,20,22,24,26,28,30 * *'    # 08:00 on even days
+    # Run every 17 hours - workflow executes at these times:
+    # Day 1: 00:00, 17:00 UTC
+    # Day 2: 10:00 UTC
+    # Day 3: 03:00, 20:00 UTC
+    # Day 4: 13:00 UTC
+    # Day 5: 06:00, 23:00 UTC
+    # Day 6: 16:00 UTC
+    # Day 7: 09:00 UTC (pattern repeats weekly)
+    - cron: '0 0,17 * * 1,3,5,7'    # 00:00 and 17:00 UTC on Mon, Wed, Fri, Sun
+    - cron: '0 10 * * 2,6'          # 10:00 UTC on Tue, Sat
+    - cron: '0 3,20 * * 3'          # 03:00 and 20:00 UTC on Wed
+    - cron: '0 13 * * 4'            # 13:00 UTC on Thu
+    - cron: '0 6,23 * * 5'          # 06:00 and 23:00 UTC on Fri
+    - cron: '0 16 * * 6'            # 16:00 UTC on Sat
+    - cron: '0 9 * * 0'             # 09:00 UTC on Sun
   workflow_dispatch: # Allow manual trigger
 
 permissions:
@@ -43,15 +54,64 @@ jobs:
           echo "should_run=true" >> $GITHUB_OUTPUT
           date +%s > .last_update
           
-      - name: Check repository status and update JSON
+      - name: Discover and update repositories
         if: steps.check_time.outputs.should_run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node << 'EOF'
           const fs = require('fs');
           const https = require('https');
           
-          // Read current repos.json
-          const reposData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+          // Configuration
+          const orgName = 'anacondy';
+          
+          // Function to make GitHub API requests
+          function githubApiRequest(path) {
+            return new Promise((resolve, reject) => {
+              const options = {
+                hostname: 'api.github.com',
+                path: path,
+                method: 'GET',
+                headers: {
+                  'User-Agent': 'RepoStatusChecker/1.0',
+                  'Accept': 'application/vnd.github+json',
+                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+              };
+              
+              const req = https.request(options, (res) => {
+                let data = '';
+                
+                res.on('data', (chunk) => {
+                  data += chunk;
+                });
+                
+                res.on('end', () => {
+                  if (res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                      resolve(JSON.parse(data));
+                    } catch (parseError) {
+                      reject(new Error(`Failed to parse JSON response: ${parseError.message}`));
+                    }
+                  } else {
+                    // Create error with status code for better handling
+                    const error = new Error(`GitHub API returned status ${res.statusCode}`);
+                    error.statusCode = res.statusCode;
+                    error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
+                    reject(error);
+                  }
+                });
+              });
+              
+              req.on('error', (error) => {
+                reject(error);
+              });
+              
+              req.end();
+            });
+          }
           
           // Function to check if URL is accessible
           function checkUrl(url) {
@@ -93,46 +153,303 @@ jobs:
             return new Promise(resolve => setTimeout(resolve, ms));
           }
           
-          // Main update function
-          async function updateRepoStatuses() {
-            console.log('Starting repository status check...');
-            let updated = 0;
+          // Fetch all public repositories from the organization
+          async function discoverRepositories() {
+            console.log('Discovering repositories from GitHub...');
+            const allRepos = [];
+            let page = 1;
+            const maxPages = 50; // Safety limit
             
-            for (let i = 0; i < reposData.length; i++) {
-              const repo = reposData[i];
-              console.log(`Checking ${repo.name} (${i + 1}/${reposData.length})...`);
+            while (page <= maxPages) {
+              const repos = await githubApiRequest(`/orgs/${orgName}/repos?type=public&per_page=100&page=${page}`);
               
-              const status = await checkUrl(repo.url);
+              if (!repos || repos.length === 0) break; // No more repos
               
-              // Update status if changed
-              if (repo.status !== status) {
-                console.log(`  Status changed: ${repo.status} -> ${status}`);
-                repo.status = status;
-                updated++;
-                
-                // Update date when status changes to active
-                if (status === 'active') {
-                  const currentDate = new Date().toISOString().split('T')[0];
-                  repo.date = currentDate;
-                  console.log(`  Date updated to: ${currentDate}`);
-                }
-              } else {
-                console.log(`  Status unchanged: ${status}`);
-              }
+              allRepos.push(...repos);
+              console.log(`Fetched page ${page}: ${repos.length} repositories`);
               
-              // Small delay to avoid rate limiting
-              await delay(200);
+              if (repos.length < 100) break; // Last page or fewer repos than page size
+              page++;
+              await delay(200); // Rate limiting
             }
             
-            console.log(`\nUpdate complete. ${updated} repositories had status changes.`);
-            
-            // Write updated data back to file
-            fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
-            console.log('repos.json updated successfully.');
+            console.log(`Total repositories found: ${allRepos.length}`);
+            return allRepos;
           }
           
-          updateRepoStatuses().catch(error => {
-            console.error('Error updating repository statuses:', error);
+          // Check if repository has GitHub Pages enabled
+          async function hasGitHubPages(repoName) {
+            try {
+              const pages = await githubApiRequest(`/repos/${orgName}/${repoName}/pages`);
+              // GitHub Pages exists - check for any valid status
+              return pages && pages.status;
+            } catch (error) {
+              // Check status code from error object
+              if (error.statusCode === 404) {
+                return false; // No GitHub Pages
+              }
+              if (error.statusCode === 403) {
+                // Rate limiting - retry after delay
+                console.log(`  Rate limited on ${repoName}, waiting...`);
+                await delay(2000);
+                try {
+                  const pages = await githubApiRequest(`/repos/${orgName}/${repoName}/pages`);
+                  return pages && pages.status;
+                } catch (retryError) {
+                  console.log(`  Retry failed for ${repoName}, skipping for safety`);
+                  return false;
+                }
+              }
+              // For other errors, log and skip for safety
+              console.log(`  Error checking Pages for ${repoName} (${error.statusCode || 'unknown'}): ${error.message}. Skipping for safety.`);
+              return false;
+            }
+          }
+          
+          // Main update function
+          async function updateRepoStatuses() {
+            // Discover all repositories
+            const allRepos = await discoverRepositories();
+            
+            // Read current repos.json to preserve existing data
+            let existingRepos = {};
+            let existingReposList = [];
+            try {
+              existingReposList = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+              existingReposList.forEach(repo => {
+                existingRepos[repo.name] = repo;
+              });
+            } catch (error) {
+              console.log('No existing repos.json found, starting fresh.');
+            }
+            
+            const reposData = [];
+            const changeLog = {
+              added: [],
+              deleted: [],
+              statusChanged: [],
+              dateUpdated: [],
+              errors: []
+            };
+            
+            console.log('\nChecking repositories for GitHub Pages...');
+            
+            for (let i = 0; i < allRepos.length; i++) {
+              const repo = allRepos[i];
+              console.log(`[${i + 1}/${allRepos.length}] Checking ${repo.name}...`);
+              
+              // Check if GitHub Pages is enabled
+              const pagesEnabled = await hasGitHubPages(repo.name);
+              await delay(200); // Rate limiting
+              
+              if (!pagesEnabled) {
+                console.log(`  No GitHub Pages enabled, skipping.`);
+                continue;
+              }
+              
+              console.log(`  GitHub Pages enabled!`);
+              
+              const url = `https://${orgName}.github.io/${repo.name}/`;
+              
+              // Check if repo exists in our current data
+              const existingRepo = existingRepos[repo.name];
+              
+              if (existingRepo) {
+                // Check status
+                const status = await checkUrl(url);
+                console.log(`  Status: ${status}`);
+                
+                // Track status changes
+                if (existingRepo.status !== status) {
+                  changeLog.statusChanged.push({
+                    name: repo.name,
+                    url: url,
+                    oldStatus: existingRepo.status,
+                    newStatus: status,
+                    date: existingRepo.date
+                  });
+                  
+                  // Track errors if status changed to error state
+                  if (status === '404' || status === 'building') {
+                    changeLog.errors.push({
+                      name: repo.name,
+                      url: url,
+                      status: status,
+                      date: existingRepo.date
+                    });
+                  }
+                }
+                
+                // Determine the date to use
+                let repoDate = existingRepo.date;
+                if (status === 'active' && existingRepo.status !== 'active') {
+                  repoDate = new Date().toISOString().split('T')[0];
+                  changeLog.dateUpdated.push({
+                    name: repo.name,
+                    url: url,
+                    oldDate: existingRepo.date,
+                    newDate: repoDate,
+                    status: status
+                  });
+                  console.log(`  Date updated!`);
+                }
+                
+                reposData.push({
+                  name: repo.name,
+                  url: url,
+                  date: repoDate,
+                  status: status
+                });
+                
+                // Mark as processed
+                delete existingRepos[repo.name];
+              } else {
+                // New repository discovered
+                const status = await checkUrl(url);
+                console.log(`  NEW repository! Status: ${status}`);
+                
+                const newDate = new Date().toISOString().split('T')[0];
+                
+                changeLog.added.push({
+                  name: repo.name,
+                  url: url,
+                  status: status,
+                  date: newDate
+                });
+                
+                reposData.push({
+                  name: repo.name,
+                  url: url,
+                  date: newDate,
+                  status: status
+                });
+              }
+              
+              await delay(200); // Rate limiting
+            }
+            
+            // Check for deleted repositories (existed before but not found now)
+            for (const repoName in existingRepos) {
+              const repo = existingRepos[repoName];
+              changeLog.deleted.push({
+                name: repo.name,
+                url: repo.url,
+                status: repo.status,
+                date: repo.date
+              });
+            }
+            
+            console.log(`\nDiscovery complete!`);
+            console.log(`Total repositories with GitHub Pages: ${reposData.length}`);
+            console.log(`New repositories discovered: ${changeLog.added.length}`);
+            console.log(`Repositories removed: ${changeLog.deleted.length}`);
+            console.log(`Status changes: ${changeLog.statusChanged.length}`);
+            
+            // Sort by date descending (newest first)
+            // Using string comparison since dates are in ISO format (YYYY-MM-DD)
+            reposData.sort((a, b) => b.date.localeCompare(a.date));
+            
+            // Generate changelog markdown
+            const changelog = generateChangelogTable(changeLog);
+            
+            // Always write the file, even if no changes (ensures file consistency)
+            fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
+            fs.writeFileSync('CHANGELOG.md', changelog);
+            console.log('repos.json and CHANGELOG.md updated successfully.');
+            
+            return { 
+              success: true, 
+              reposCount: reposData.length, 
+              changeLog: changeLog,
+              hasChanges: changeLog.added.length > 0 || changeLog.deleted.length > 0 || 
+                         changeLog.statusChanged.length > 0 || changeLog.dateUpdated.length > 0
+            };
+          }
+          
+          // Generate a markdown table for the changelog
+          function generateChangelogTable(changeLog) {
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+            let markdown = `# Repository Update Log\n\n`;
+            markdown += `**Last Updated:** ${timestamp}\n\n`;
+            markdown += `## Summary\n\n`;
+            markdown += `- **Repositories Added:** ${changeLog.added.length}\n`;
+            markdown += `- **Repositories Deleted:** ${changeLog.deleted.length}\n`;
+            markdown += `- **Status Changes:** ${changeLog.statusChanged.length}\n`;
+            markdown += `- **Date Updates:** ${changeLog.dateUpdated.length}\n`;
+            markdown += `- **Errors/Issues:** ${changeLog.errors.length}\n\n`;
+            
+            if (changeLog.added.length > 0) {
+              markdown += `## 🆕 Repositories Added\n\n`;
+              markdown += `| Repository | URL | Status | Date Added |\n`;
+              markdown += `|------------|-----|--------|------------|\n`;
+              changeLog.added.forEach(repo => {
+                const statusIcon = repo.status === 'active' ? '✅' : repo.status === '404' ? '❌' : '⏳';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${statusIcon} ${repo.status} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.deleted.length > 0) {
+              markdown += `## 🗑️ Repositories Deleted\n\n`;
+              markdown += `| Repository | URL | Previous Status | Last Known Date |\n`;
+              markdown += `|------------|-----|-----------------|----------------|\n`;
+              changeLog.deleted.forEach(repo => {
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${repo.status} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.statusChanged.length > 0) {
+              markdown += `## 🔄 Status Changes\n\n`;
+              markdown += `| Repository | URL | Old Status | New Status | Date |\n`;
+              markdown += `|------------|-----|------------|------------|------|\n`;
+              changeLog.statusChanged.forEach(repo => {
+                const oldIcon = repo.oldStatus === 'active' ? '✅' : repo.oldStatus === '404' ? '❌' : '⏳';
+                const newIcon = repo.newStatus === 'active' ? '✅' : repo.newStatus === '404' ? '❌' : '⏳';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${oldIcon} ${repo.oldStatus} | ${newIcon} ${repo.newStatus} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.dateUpdated.length > 0) {
+              markdown += `## 📅 Date Updates\n\n`;
+              markdown += `| Repository | URL | Old Date | New Date | Status |\n`;
+              markdown += `|------------|-----|----------|----------|--------|\n`;
+              changeLog.dateUpdated.forEach(repo => {
+                const statusIcon = repo.status === 'active' ? '✅' : repo.status === '404' ? '❌' : '⏳';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${repo.oldDate} | ${repo.newDate} | ${statusIcon} ${repo.status} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.errors.length > 0) {
+              markdown += `## ⚠️ Errors/Issues\n\n`;
+              markdown += `| Repository | URL | Issue | Date |\n`;
+              markdown += `|------------|-----|-------|------|\n`;
+              changeLog.errors.forEach(repo => {
+                const issue = repo.status === '404' ? 'Not Found (404)' : 'Building/Unavailable';
+                markdown += `| ${repo.name} | [Link](${repo.url}) | ${issue} | ${repo.date} |\n`;
+              });
+              markdown += `\n`;
+            }
+            
+            if (changeLog.added.length === 0 && changeLog.deleted.length === 0 && 
+                changeLog.statusChanged.length === 0 && changeLog.dateUpdated.length === 0) {
+              markdown += `## ℹ️ No Changes\n\n`;
+              markdown += `No repositories were added, deleted, or had status changes during this update.\n\n`;
+            }
+            
+            return markdown;
+          }
+          
+          updateRepoStatuses().then(result => {
+            console.log(`\nWorkflow completed successfully!`);
+            console.log(`Result: ${JSON.stringify(result)}`);
+            process.exit(0);
+          }).catch(error => {
+            console.error('Fatal error updating repository statuses:', error);
+            // Try to preserve any existing repos.json rather than leaving it corrupted
+            console.error('The workflow failed, but repos.json should still be in a valid state.');
             process.exit(1);
           });
           EOF
@@ -142,11 +459,21 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add repos.json .last_update
+          git add repos.json CHANGELOG.md .last_update
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Auto-update repository status [skip ci]"
+            # Create commit message with summary
+            echo "Auto-update repository status [skip ci]" > /tmp/commit-msg.txt
+            echo "" >> /tmp/commit-msg.txt
+            
+            # Extract summary from CHANGELOG.md if it exists
+            if [ -f CHANGELOG.md ]; then
+              echo "Summary of changes:" >> /tmp/commit-msg.txt
+              grep "^- \*\*" CHANGELOG.md | head -5 >> /tmp/commit-msg.txt
+            fi
+            
+            git commit -F /tmp/commit-msg.txt
             git push
             echo "Changes committed and pushed"
           fi
