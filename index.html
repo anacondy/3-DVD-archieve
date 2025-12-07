@@ -41,7 +41,7 @@
             align-items: center;
         }
 
-        /* Canvas for Particles */
+        /* Canvas for Particles - GPU accelerated */
         #particle-canvas {
             position: absolute;
             top: 0;
@@ -49,6 +49,9 @@
             width: 100%;
             height: 100%;
             z-index: 1;
+            will-change: transform;
+            transform: translateZ(0);
+            backface-visibility: hidden;
         }
 
         /* UI Layer */
@@ -97,7 +100,7 @@
             cursor: pointer;
         }
 
-        /* Scanlines */
+        /* Scanlines - GPU accelerated */
         .scanlines {
             position: absolute;
             top: 0;
@@ -114,9 +117,12 @@
             background-size: 100% 4px;
             z-index: 20;
             pointer-events: none;
+            will-change: transform;
+            transform: translateZ(0);
+            backface-visibility: hidden;
         }
 
-        /* Screen Glow/Vignette */
+        /* Screen Glow/Vignette - GPU accelerated */
         .vignette {
             position: absolute;
             top: 0;
@@ -127,6 +133,9 @@
             z-index: 21;
             pointer-events: none;
             box-shadow: inset 0 0 50px rgba(0,0,0,0.7);
+            will-change: transform;
+            transform: translateZ(0);
+            backface-visibility: hidden;
         }
 
         /* --- UI ELEMENTS --- */
@@ -301,18 +310,49 @@
             .dvd-svg { width: 90%; }
             .repo-item { font-size: 0.9rem; padding: 12px; } /* Slightly smaller text for mobile */
             .center-hud { width: 95%; }
+            .repo-list-container {
+                max-width: 95%;
+                -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            }
         }
 
+        /* Optimizations for 16:9 aspect ratio displays (standard widescreen) */
+        @media (aspect-ratio: 16/9) {
+            .repo-list-container {
+                max-width: 700px;
+                height: 60vh;
+            }
+        }
+        
         /* Optimizations for 16:9 aspect ratio mobile devices */
         @media (max-aspect-ratio: 16/9) and (max-width: 480px) {
-            .repo-list-container { height: 50vh; }
+            .repo-list-container { height: 52vh; }
             .repo-item { padding: 10px; font-size: 0.85rem; }
         }
 
-        /* Optimizations for 20:9 and taller aspect ratio mobile devices */
-        @media (max-aspect-ratio: 20/9) and (min-aspect-ratio: 16/9) and (max-width: 480px) {
-            .repo-list-container { height: 60vh; }
-            .repo-item { padding: 12px; }
+        /* Optimizations for 20:9 and taller aspect ratio mobile devices (modern smartphones) */
+        @media (min-aspect-ratio: 19/9) and (max-width: 768px) {
+            .repo-list-container { 
+                height: 65vh; /* Use more vertical space on tall phones */
+            }
+            .side-data {
+                font-size: 0.55rem;
+                line-height: 1.1;
+            }
+            .repo-item { 
+                padding: 14px;
+                font-size: 1rem;
+            }
+        }
+        
+        /* High DPI / Retina optimizations for better performance */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            .scanlines {
+                background-size: 100% 2px; /* Finer scanlines on high DPI */
+            }
+            .vignette {
+                box-shadow: inset 0 0 40px rgba(0,0,0,0.6); /* Lighter shadow for better performance */
+            }
         }
 
     </style>
@@ -549,14 +589,57 @@
         };
 
         /* =========================================
-           VISUAL ENGINE
+           VISUAL ENGINE (Optimized for 60+ FPS)
            ========================================= */
-        const PARTICLE_COUNT = 800; 
+        // Constants for device capability thresholds
+        const SCREEN_AREA_THRESHOLD_LOW = 1.5; // Million pixels
+        const SCREEN_AREA_THRESHOLD_HIGH = 2.5; // Million pixels
+        const PIXEL_RATIO_THRESHOLD = 1.5;
+        const MOBILE_WIDTH_THRESHOLD = 768;
+        
+        // Cache device pixel ratio (doesn't change during runtime)
+        const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
+        
+        // Adaptive particle count based on device capabilities
+        let cachedParticleCount = null;
+        const getOptimalParticleCount = () => {
+            // Return cached value if already calculated
+            if (cachedParticleCount !== null) return cachedParticleCount;
+            
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const screenArea = (width * height) / 1000000; // in millions of pixels
+            
+            // High-end device detection via pixel ratio and screen size
+            const isHighEndDevice = DEVICE_PIXEL_RATIO > PIXEL_RATIO_THRESHOLD || screenArea > SCREEN_AREA_THRESHOLD_HIGH;
+            
+            // Mobile detection
+            const isMobile = width < MOBILE_WIDTH_THRESHOLD;
+            
+            // Base particle count on screen size and device capability
+            let count;
+            if (isMobile) {
+                count = screenArea > SCREEN_AREA_THRESHOLD_LOW ? 400 : 300;
+            } else if (isHighEndDevice) {
+                count = screenArea > SCREEN_AREA_THRESHOLD_HIGH ? 1000 : 800;
+            } else {
+                count = 600;
+            }
+            
+            cachedParticleCount = count;
+            return count;
+        };
+        
+        const PARTICLE_COUNT = getOptimalParticleCount();
         const MOUSE_RADIUS = 120;
         const PARTICLE_COLOR = '#ffff00';
         
         const canvas = document.getElementById('particle-canvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { 
+            alpha: true,
+            desynchronized: true, // Enable low-latency canvas for high refresh rates
+            willReadFrequently: false
+        });
         const uiLayer = document.getElementById('ui-layer');
         const introLayer = document.getElementById('intro-layer');
         const startOverlay = document.getElementById('start-overlay');
@@ -661,13 +744,28 @@
         let lastMousePos = { x: 0, y: 0 };
 
         window.addEventListener('resize', () => {
+            cachedParticleCount = null; // Clear cache on resize
             resizeCanvas();
             initParticles();
         });
 
         function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            const rect = canvas.getBoundingClientRect();
+            
+            // Set display size (css pixels)
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            
+            // Set actual size in memory (scaled for retina displays)
+            canvas.width = rect.width * DEVICE_PIXEL_RATIO;
+            canvas.height = rect.height * DEVICE_PIXEL_RATIO;
+            
+            // Scale context to account for device pixel ratio
+            ctx.scale(DEVICE_PIXEL_RATIO, DEVICE_PIXEL_RATIO);
+            
+            // Update canvas dimensions for particle calculations
+            canvas.displayWidth = rect.width;
+            canvas.displayHeight = rect.height;
         }
 
         const updateMouse = (x, y) => {
@@ -712,8 +810,10 @@
 
         class Particle {
             constructor() {
-                this.x = Math.random() * canvas.width;
-                this.y = Math.random() * canvas.height;
+                const w = canvas.displayWidth || canvas.width;
+                const h = canvas.displayHeight || canvas.height;
+                this.x = Math.random() * w;
+                this.y = Math.random() * h;
                 this.vx = (Math.random() - 0.5) * 0.5;
                 this.vy = (Math.random() - 0.5) * 0.5;
                 this.size = Math.random() * 2 + 1; 
@@ -723,93 +823,147 @@
             }
 
             draw() {
+                // Optimized drawing - fillRect is faster than arc for squares
                 ctx.fillStyle = PARTICLE_COLOR;
-                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.fillRect(this.x | 0, this.y | 0, this.size, this.size); // Bitwise OR for integer conversion (faster)
             }
 
             update() {
+                const w = canvas.displayWidth || canvas.width;
+                const h = canvas.displayHeight || canvas.height;
+                
                 if (mouse.active) {
-                    let dx = mouse.x - this.x;
-                    let dy = mouse.y - this.y;
-                    let distance = Math.sqrt(dx * dx + dy * dy);
+                    const dx = mouse.x - this.x;
+                    const dy = mouse.y - this.y;
+                    const distSq = dx * dx + dy * dy; // Use squared distance to avoid sqrt
+                    const radiusSq = MOUSE_RADIUS * MOUSE_RADIUS;
                     
-                    if (distance < MOUSE_RADIUS) {
+                    if (distSq < radiusSq) {
+                        const distance = Math.sqrt(distSq); // Only calculate sqrt when needed
                         const forceDirectionX = dx / distance;
                         const forceDirectionY = dy / distance;
-                        const maxDistance = MOUSE_RADIUS;
-                        const force = (maxDistance - distance) / maxDistance;
+                        const force = (MOUSE_RADIUS - distance) / MOUSE_RADIUS;
                         const directionX = forceDirectionX * force * this.density;
                         const directionY = forceDirectionY * force * this.density;
 
                         this.vx -= directionX;
                         this.vy -= directionY;
 
+                        // Optimized audio triggering
                         if (mouse.velocity > 5 && Math.random() > 0.99) {
                             AudioEngine.playParticleSound(Math.min(mouse.velocity / 20, 1));
                         }
                     }
                 }
+                
+                // Update position
                 this.x += this.vx;
                 this.y += this.vy;
                 this.vx *= 0.95; 
                 this.vy *= 0.95;
-                if (this.x > canvas.width) this.x = 0;
-                if (this.x < 0) this.x = canvas.width;
-                if (this.y > canvas.height) this.y = 0;
-                if (this.y < 0) this.y = canvas.height;
+                
+                // Wrap around screen edges
+                if (this.x > w) this.x = 0;
+                else if (this.x < 0) this.x = w;
+                if (this.y > h) this.y = 0;
+                else if (this.y < 0) this.y = h;
             }
         }
 
         function initParticles() {
             particles = [];
-            const count = window.innerWidth < 768 ? PARTICLE_COUNT / 2 : PARTICLE_COUNT;
+            const count = getOptimalParticleCount();
             for (let i = 0; i < count; i++) {
                 particles.push(new Particle());
             }
         }
 
-        function animate() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            for (let i = 0; i < particles.length; i++) {
-                particles[i].draw();
-                particles[i].update();
+        // High refresh rate animation loop with FPS tracking
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+        let actualFPS = 60;
+        let fpsUpdateTime = performance.now();
+        
+        // Cache DOM elements to avoid repeated lookups
+        let fpsCounterEl = null;
+        
+        function animate(currentTime) {
+            // Calculate delta time for frame-independent animation
+            const deltaTime = currentTime - lastFrameTime;
+            lastFrameTime = currentTime;
+            
+            // FPS calculation
+            frameCount++;
+            if (currentTime - fpsUpdateTime >= 1000) {
+                actualFPS = frameCount;
+                frameCount = 0;
+                fpsUpdateTime = currentTime;
+                
+                // Update FPS counter in UI (cache element reference)
+                if (!fpsCounterEl) fpsCounterEl = document.getElementById('fps-counter');
+                if (fpsCounterEl) fpsCounterEl.innerText = actualFPS;
             }
+            
+            // Get display dimensions
+            const w = canvas.displayWidth || canvas.width;
+            const h = canvas.displayHeight || canvas.height;
+            
+            // Clear canvas efficiently
+            ctx.clearRect(0, 0, w, h);
+            
+            // Batch rendering for better performance
+            ctx.fillStyle = PARTICLE_COLOR;
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+            }
+            
             requestAnimationFrame(animate);
         }
 
         function initWave() {
             const waveCanvas = document.getElementById('wave-canvas');
-            const waveCtx = waveCanvas.getContext('2d');
+            const waveCtx = waveCanvas.getContext('2d', { alpha: true });
             let offset = 0;
-            function drawWave() {
+            let lastWaveTime = performance.now();
+            
+            // Performance optimization: Skip pixels for smoother rendering
+            const WAVE_PIXEL_STEP = 2; // Render every 2nd pixel for better performance
+            
+            function drawWave(currentTime) {
+                // Frame-independent animation
+                const deltaTime = (currentTime - lastWaveTime) / 16.67; // Normalize to 60fps baseline
+                lastWaveTime = currentTime;
+                
                 waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
                 waveCtx.beginPath();
                 waveCtx.lineWidth = 2;
                 waveCtx.strokeStyle = '#33ff00';
-                for (let i = 0; i < waveCanvas.width; i++) {
+                for (let i = 0; i < waveCanvas.width; i += WAVE_PIXEL_STEP) {
                     const y = 20 + Math.sin(i * 0.05 + offset) * 10 * Math.sin(offset * 0.1);
                     waveCtx.lineTo(i, y);
                 }
                 waveCtx.stroke();
-                offset += 0.1;
+                offset += 0.1 * deltaTime;
                 requestAnimationFrame(drawWave);
             }
-            drawWave();
+            drawWave(performance.now());
 
+            // Cache DOM element references
+            const memCounterEl = document.getElementById('mem-counter');
+            const loadingBarEl = document.getElementById('loading-bar');
+            
+            // Update memory status
             setInterval(() => {
-                const fpsEl = document.getElementById('fps-counter');
-                if(fpsEl) fpsEl.innerText = Math.floor(58 + Math.random() * 4);
-                
-                const memEl = document.getElementById('mem-counter');
-                if(memEl) memEl.innerText = Math.random() > 0.9 ? "BUSY" : "OK";
+                if(memCounterEl) memCounterEl.innerText = Math.random() > 0.9 ? "BUSY" : "OK";
             }, 500);
             
-            const bar = document.getElementById('loading-bar');
+            // Loading bar animation
             let width = 100;
             setInterval(() => {
-                if(bar) {
+                if(loadingBarEl) {
                     width = (width + 5) % 100;
-                    bar.style.width = width + '%';
+                    loadingBarEl.style.width = width + '%';
                 }
             }, 100);
         }

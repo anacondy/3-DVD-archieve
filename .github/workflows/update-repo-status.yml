@@ -2,21 +2,17 @@ name: Update Repository Status
 
 on:
   schedule:
-    # Run every 17 hours - workflow executes at these times:
-    # Day 1: 00:00, 17:00 UTC
-    # Day 2: 10:00 UTC
-    # Day 3: 03:00, 20:00 UTC
-    # Day 4: 13:00 UTC
-    # Day 5: 06:00, 23:00 UTC
-    # Day 6: 16:00 UTC
-    # Day 7: 09:00 UTC (pattern repeats weekly)
-    - cron: '0 0,17 * * 1,3,5,7'  # 00:00 and 17:00 UTC on Mon, Wed, Fri, Sun
-    - cron: '0 10 * * 2,6'          # 10:00 UTC on Tue, Sat
-    - cron: '0 3,20 * * 3'          # 03:00 and 20:00 UTC on Wed
-    - cron: '0 13 * * 4'            # 13:00 UTC on Thu
-    - cron: '0 6,23 * * 5'          # 06:00 and 23:00 UTC on Fri
-    - cron: '0 16 * * 6'            # 16:00 UTC on Sat
-    - cron: '0 9 * * 0'             # 09:00 UTC on Sun
+    # Run approximately every 17 hours throughout the week
+    - cron: '0 0 * * 1'     # Monday 00:00 UTC
+    - cron: '0 17 * * 1'    # Monday 17:00 UTC
+    - cron: '0 10 * * 2'    # Tuesday 10:00 UTC
+    - cron: '0 3 * * 3'     # Wednesday 03:00 UTC
+    - cron: '0 20 * * 3'    # Wednesday 20:00 UTC
+    - cron: '0 13 * * 4'    # Thursday 13:00 UTC
+    - cron: '0 6 * * 5'     # Friday 06:00 UTC
+    - cron: '0 23 * * 5'    # Friday 23:00 UTC
+    - cron: '0 16 * * 6'    # Saturday 16:00 UTC
+    - cron: '0 9 * * 0'     # Sunday 09:00 UTC
   workflow_dispatch: # Allow manual trigger
 
 permissions:
