@@ -13,10 +13,10 @@ on:
     - cron: '0 23 * * 5'    # Friday 23:00 UTC
     - cron: '0 16 * * 6'    # Saturday 16:00 UTC
     - cron: '0 9 * * 0'     # Sunday 09:00 UTC
-    - cron: '0 0 * * 3'     # Wednesday 00:00 UTC
-    - cron: '0 17 * * 5'    # Friday 17:00 UTC
-    - cron: '0 10 * * 6'    # Saturday 10:00 UTC
-    - cron: '0 0 * * 7'     # Sunday 00:00 UTC
+    - cron: '0 0 * * 3'     # Wednesday 00:00 UTC (additional)
+    - cron: '0 17 * * 5'    # Friday 17:00 UTC (additional)
+    - cron: '0 10 * * 6'    # Saturday 10:00 UTC (additional)
+    - cron: '0 0 * * 0'     # Sunday 00:00 UTC (additional)
   workflow_dispatch: # Allow manual trigger
 
 permissions:
