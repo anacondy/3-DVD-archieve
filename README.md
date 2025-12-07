@@ -27,6 +27,7 @@ A retro DVD-style interface for browsing the Anacondy archive collection.
 
 ## Documentation
 
+- **[WORKFLOW_VISUAL_GUIDE.md](WORKFLOW_VISUAL_GUIDE.md)** - 🎨 Visual workflow guide with diagrams and examples
 - **[WORKFLOW_OVERVIEW.md](WORKFLOW_OVERVIEW.md)** - Complete workflow diagram and data flow documentation
 - **[IMPLEMENTATION.md](IMPLEMENTATION.md)** - Technical implementation details
 - **[GITHUB_ACTIONS_GUIDE.md](GITHUB_ACTIONS_GUIDE.md)** - Educational guide to GitHub Actions
