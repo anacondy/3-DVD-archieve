@@ -598,8 +598,9 @@
             const pixelRatio = window.devicePixelRatio || 1;
             const screenArea = (width * height) / 1000000; // in millions of pixels
             
-            // High refresh rate detection
-            const isHighRefreshRate = window.screen?.refreshRate > 60 || false;
+            // High refresh rate detection - Note: refreshRate is not widely supported
+            // Fallback to detecting high-end devices via pixel ratio and screen size
+            const isHighEndDevice = pixelRatio > 1.5 || screenArea > 2.5;
             
             // Mobile detection
             const isMobile = width < 768;
@@ -607,7 +608,7 @@
             // Base particle count on screen size and device capability
             if (isMobile) {
                 return screenArea > 1.5 ? 400 : 300; // Fewer particles on mobile
-            } else if (isHighRefreshRate || pixelRatio > 1.5) {
+            } else if (isHighEndDevice) {
                 return screenArea > 2.5 ? 1000 : 800; // More particles for high-end displays
             } else {
                 return 600; // Default for standard displays
@@ -868,6 +869,9 @@
         let actualFPS = 60;
         let fpsUpdateTime = performance.now();
         
+        // Cache DOM elements to avoid repeated lookups
+        let fpsCounterEl = null;
+        
         function animate(currentTime) {
             // Calculate delta time for frame-independent animation
             const deltaTime = currentTime - lastFrameTime;
@@ -880,9 +884,9 @@
                 frameCount = 0;
                 fpsUpdateTime = currentTime;
                 
-                // Update FPS counter in UI
-                const fpsEl = document.getElementById('fps-counter');
-                if (fpsEl) fpsEl.innerText = actualFPS;
+                // Update FPS counter in UI (cache element reference)
+                if (!fpsCounterEl) fpsCounterEl = document.getElementById('fps-counter');
+                if (fpsCounterEl) fpsCounterEl.innerText = actualFPS;
             }
             
             // Get display dimensions
@@ -908,6 +912,9 @@
             let offset = 0;
             let lastWaveTime = performance.now();
             
+            // Performance optimization: Skip pixels for smoother rendering
+            const WAVE_PIXEL_STEP = 2; // Render every 2nd pixel for better performance
+            
             function drawWave(currentTime) {
                 // Frame-independent animation
                 const deltaTime = (currentTime - lastWaveTime) / 16.67; // Normalize to 60fps baseline
@@ -917,7 +924,7 @@
                 waveCtx.beginPath();
                 waveCtx.lineWidth = 2;
                 waveCtx.strokeStyle = '#33ff00';
-                for (let i = 0; i < waveCanvas.width; i += 2) { // Skip every other pixel for performance
+                for (let i = 0; i < waveCanvas.width; i += WAVE_PIXEL_STEP) {
                     const y = 20 + Math.sin(i * 0.05 + offset) * 10 * Math.sin(offset * 0.1);
                     waveCtx.lineTo(i, y);
                 }
@@ -927,19 +934,21 @@
             }
             drawWave(performance.now());
 
+            // Cache DOM element references
+            const memCounterEl = document.getElementById('mem-counter');
+            const loadingBarEl = document.getElementById('loading-bar');
+            
             // Update memory status
             setInterval(() => {
-                const memEl = document.getElementById('mem-counter');
-                if(memEl) memEl.innerText = Math.random() > 0.9 ? "BUSY" : "OK";
+                if(memCounterEl) memCounterEl.innerText = Math.random() > 0.9 ? "BUSY" : "OK";
             }, 500);
             
             // Loading bar animation
-            const bar = document.getElementById('loading-bar');
             let width = 100;
             setInterval(() => {
-                if(bar) {
+                if(loadingBarEl) {
                     width = (width + 5) % 100;
-                    bar.style.width = width + '%';
+                    loadingBarEl.style.width = width + '%';
                 }
             }, 100);
         }
