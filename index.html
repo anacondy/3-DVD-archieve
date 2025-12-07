@@ -591,28 +591,43 @@
         /* =========================================
            VISUAL ENGINE (Optimized for 60+ FPS)
            ========================================= */
+        // Constants for device capability thresholds
+        const SCREEN_AREA_THRESHOLD_LOW = 1.5; // Million pixels
+        const SCREEN_AREA_THRESHOLD_HIGH = 2.5; // Million pixels
+        const PIXEL_RATIO_THRESHOLD = 1.5;
+        const MOBILE_WIDTH_THRESHOLD = 768;
+        
+        // Cache device pixel ratio (doesn't change during runtime)
+        const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
+        
         // Adaptive particle count based on device capabilities
+        let cachedParticleCount = null;
         const getOptimalParticleCount = () => {
+            // Return cached value if already calculated
+            if (cachedParticleCount !== null) return cachedParticleCount;
+            
             const width = window.innerWidth;
             const height = window.innerHeight;
-            const pixelRatio = window.devicePixelRatio || 1;
             const screenArea = (width * height) / 1000000; // in millions of pixels
             
-            // High refresh rate detection - Note: refreshRate is not widely supported
-            // Fallback to detecting high-end devices via pixel ratio and screen size
-            const isHighEndDevice = pixelRatio > 1.5 || screenArea > 2.5;
+            // High-end device detection via pixel ratio and screen size
+            const isHighEndDevice = DEVICE_PIXEL_RATIO > PIXEL_RATIO_THRESHOLD || screenArea > SCREEN_AREA_THRESHOLD_HIGH;
             
             // Mobile detection
-            const isMobile = width < 768;
+            const isMobile = width < MOBILE_WIDTH_THRESHOLD;
             
             // Base particle count on screen size and device capability
+            let count;
             if (isMobile) {
-                return screenArea > 1.5 ? 400 : 300; // Fewer particles on mobile
+                count = screenArea > SCREEN_AREA_THRESHOLD_LOW ? 400 : 300;
             } else if (isHighEndDevice) {
-                return screenArea > 2.5 ? 1000 : 800; // More particles for high-end displays
+                count = screenArea > SCREEN_AREA_THRESHOLD_HIGH ? 1000 : 800;
             } else {
-                return 600; // Default for standard displays
+                count = 600;
             }
+            
+            cachedParticleCount = count;
+            return count;
         };
         
         const PARTICLE_COUNT = getOptimalParticleCount();
@@ -729,12 +744,12 @@
         let lastMousePos = { x: 0, y: 0 };
 
         window.addEventListener('resize', () => {
+            cachedParticleCount = null; // Clear cache on resize
             resizeCanvas();
             initParticles();
         });
 
         function resizeCanvas() {
-            const dpr = window.devicePixelRatio || 1;
             const rect = canvas.getBoundingClientRect();
             
             // Set display size (css pixels)
@@ -742,11 +757,11 @@
             canvas.style.height = rect.height + 'px';
             
             // Set actual size in memory (scaled for retina displays)
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
+            canvas.width = rect.width * DEVICE_PIXEL_RATIO;
+            canvas.height = rect.height * DEVICE_PIXEL_RATIO;
             
             // Scale context to account for device pixel ratio
-            ctx.scale(dpr, dpr);
+            ctx.scale(DEVICE_PIXEL_RATIO, DEVICE_PIXEL_RATIO);
             
             // Update canvas dimensions for particle calculations
             canvas.displayWidth = rect.width;
