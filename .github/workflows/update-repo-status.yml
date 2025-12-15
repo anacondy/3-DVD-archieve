@@ -23,6 +23,7 @@ jobs:
       - name: Discover and update repositories
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           node << 'EOF'
           const fs = require('fs');
@@ -31,13 +32,34 @@ jobs:
           // Configuration
           const userName = 'anacondy';
 
+          // Format date as dd MMM, yyyy
+          function formatDate(dateString) {
+            const date = new Date(dateString);
+            const day = date.getDate();
+            const suffix = (day === 1 || day === 21 || day === 31) ? 'st' :
+                          (day === 2 || day === 22) ? 'nd' :
+                          (day === 3 || day === 23) ? 'rd' : 'th';
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = monthNames[date.getMonth()];
+            const year = date.getFullYear();
+            return `${day}${suffix} ${month}, ${year}`;
+          }
+
+          // Calculate date gap
+          function calculateDateGap(creationDate, additionDate) {
+            const creation = new Date(creationDate);
+            const addition = new Date(additionDate);
+            const gap = Math.floor((addition - creation) / (1000 * 60 * 60 * 24));
+            return `${gap} days`;
+          }
+
           // Function to make GitHub API requests
-          function githubApiRequest(path) {
+          function githubApiRequest(path, method = 'GET', body = null) {
             return new Promise((resolve, reject) => {
               const options = {
                 hostname: 'api.github.com',
                 path: path,
-                method: 'GET',
+                method: method,
                 headers: {
                   'User-Agent': 'RepoStatusChecker/1.0',
                   'Accept': 'application/vnd.github+json',
@@ -72,6 +94,10 @@ jobs:
               req.on('error', (error) => {
                 reject(error);
               });
+
+              if (body) {
+                req.write(body);
+              }
 
               req.end();
             });
@@ -196,6 +222,9 @@ jobs:
 
             console.log('\nChecking repositories for GitHub Pages...');
 
+            const workflowVersion = process.env.GITHUB_RUN_NUMBER || 'Unknown';
+            const previousReposCount = existingReposList.length;
+
             for (let i = 0; i < allRepos.length; i++) {
               const repo = allRepos[i];
               console.log(`[${i + 1}/${allRepos.length}] Checking ${repo.name}...`);
@@ -253,7 +282,8 @@ jobs:
                   name: repo.name,
                   url: url,
                   date: repoDate,
-                  status: status
+                  status: status,
+                  workflow_version: workflowVersion
                 });
 
                 delete existingRepos[repo.name];
@@ -274,7 +304,8 @@ jobs:
                   name: repo.name,
                   url: url,
                   date: newDate,
-                  status: status
+                  status: status,
+                  workflow_version: workflowVersion
                 });
               }
 
@@ -291,13 +322,27 @@ jobs:
               });
             }
 
-            console.log(`\nDiscovery complete!`);
-            console.log(`Total repositories with GitHub Pages: ${reposData.length}`);
-            console.log(`New repositories discovered: ${changeLog.added.length}`);
-            console.log(`Repositories removed: ${changeLog.deleted.length}`);
-            console.log(`Status changes: ${changeLog.statusChanged.length}`);
+            // Fetch creation date and calculate date gap for each repository
+            for (const repo of reposData) {
+              try {
+                const repoInfo = await githubApiRequest(`/repos/${userName}/${repo.name}`);
+                repo.created_at = repoInfo.created_at.split('T')[0];
+                repo.date_gap = calculateDateGap(repo.created_at, repo.date);
+              } catch (error) {
+                console.error(`Failed to fetch creation date for ${repo.name}:`, error.message);
+                repo.created_at = 'Unknown';
+                repo.date_gap = 'Unknown';
+              }
+            }
 
-            reposData.sort((a, b) => b.date.localeCompare(a.date));
+            console.log(`\nDiscovery complete!`);
+            console.log(`Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})`);
+            console.log(`Previous version (${formatDate(existingReposList[0]?.date || new Date().toISOString())}): ${previousReposCount} repositories`);
+            console.log(`New version (${formatDate(new Date().toISOString())}): ${reposData.length} repositories`);
+            console.log(`Additions: ${changeLog.added.length} repositories`);
+            console.log(`Deletions: ${changeLog.deleted.length} repositories`);
+
+            reposData.sort((a, b) => new Date(b.date) - new Date(a.date));
 
             fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
             console.log('repos.json updated successfully.');
@@ -307,13 +352,60 @@ jobs:
               reposCount: reposData.length,
               changeLog: changeLog,
               hasChanges: changeLog.added.length > 0 || changeLog.deleted.length > 0 ||
-                changeLog.statusChanged.length > 0 || changeLog.dateUpdated.length > 0
+                changeLog.statusChanged.length > 0 || changeLog.dateUpdated.length > 0,
+              workflowVersion: workflowVersion
             };
           }
 
-          updateRepoStatuses().then(result => {
+          // Function to update the wiki page
+          async function updateWikiPage(reposData, changeLog, previousReposCount, newReposCount, additions, deletions, workflowVersion) {
+            const wikiPageName = 'Repository-Status-and-History';
+            let wikiContent = `# Repository Status and History\n\n`;
+
+            // Add summary section
+            wikiContent += `## Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})\n`;
+            wikiContent += `- Previous version (${formatDate(reposData[0]?.date || new Date().toISOString())}): ${previousReposCount} repositories\n`;
+            wikiContent += `- New version (${formatDate(new Date().toISOString())}): ${newReposCount} repositories\n`;
+            wikiContent += `- Additions: ${additions} repositories\n`;
+            wikiContent += `- Deletions: ${deletions} repositories\n\n`;
+
+            // Add table
+            wikiContent += `| Repository Name       | Link                                  | Added Date       | Creation Date   | Date Gap       | Workflow Version |\n`;
+            wikiContent += `|-----------------------|---------------------------------------|------------------|------------------|----------------|------------------|\n`;
+
+            reposData.forEach(repo => {
+              wikiContent += `| ${repo.name} | [Link](${repo.url}) | ${formatDate(repo.date)} | ${formatDate(repo.created_at)} | ${repo.date_gap} | #${repo.workflow_version} |\n`;
+            });
+
+            // Update the wiki page
+            try {
+              const wikiResponse = await githubApiRequest(
+                `/repos/${userName}/${process.env.GITHUB_REPOSITORY.split('/')[1]}/wiki/pages`,
+                'POST',
+                JSON.stringify({
+                  title: wikiPageName,
+                  content: wikiContent,
+                  format: 'markdown'
+                })
+              );
+              console.log('Wiki page updated successfully.');
+            } catch (error) {
+              console.error('Failed to update wiki page:', error.message);
+            }
+          }
+
+          updateRepoStatuses().then(async (result) => {
             console.log(`\nWorkflow completed successfully!`);
             console.log(`Result: ${JSON.stringify(result)}`);
+            await updateWikiPage(
+              reposData,
+              result.changeLog,
+              existingReposList.length,
+              reposData.length,
+              result.changeLog.added.length,
+              result.changeLog.deleted.length,
+              result.workflowVersion
+            );
             process.exit(0);
           }).catch(error => {
             console.error('Fatal error updating repository statuses:', error);
