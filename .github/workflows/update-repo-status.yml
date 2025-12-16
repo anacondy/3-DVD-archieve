@@ -242,10 +242,10 @@ jobs:
               const url = `https://${userName}.github.io/${repo.name}/`;
               const existingRepo = existingRepos[repo.name];
 
-              if (existingRepo) {
-                const status = await checkUrl(url);
-                console.log(` Status: ${status}`);
+              const status = await checkUrl(url);
+              console.log(` Status: ${status}`);
 
+              if (existingRepo) {
                 if (existingRepo.status !== status) {
                   changeLog.statusChanged.push({
                     name: repo.name,
@@ -288,9 +288,6 @@ jobs:
 
                 delete existingRepos[repo.name];
               } else {
-                const status = await checkUrl(url);
-                console.log(` NEW repository! Status: ${status}`);
-
                 const newDate = new Date().toISOString().split('T')[0];
 
                 changeLog.added.push({
@@ -355,11 +352,11 @@ jobs:
             wikiContent += `- Additions: ${changeLog.added.length} repositories\n`;
             wikiContent += `- Deletions: ${changeLog.deleted.length} repositories\n\n`;
 
-            wikiContent += `| Repository Name       | Link                                  | Added Date       | Creation Date   | Date Gap       | Workflow Version |\n`;
-            wikiContent += `|-----------------------|---------------------------------------|------------------|------------------|----------------|------------------|\n`;
+            wikiContent += `| Repository Name       | Link                                  | Added Date       | Creation Date   | Date Gap       | Status       | Workflow Version |\n`;
+            wikiContent += `|-----------------------|---------------------------------------|------------------|------------------|----------------|---------------|------------------|\n`;
 
             reposData.forEach(repo => {
-              wikiContent += `| ${repo.name} | [Link](${repo.url}) | ${formatDate(repo.date)} | ${formatDate(repo.created_at)} | ${repo.date_gap} | #${repo.workflow_version} |\n`;
+              wikiContent += `| ${repo.name} | [Link](${repo.url}) | ${formatDate(repo.date)} | ${formatDate(repo.created_at)} | ${repo.date_gap} | ${repo.status} | #${repo.workflow_version} |\n`;
             });
 
             // Save wiki content to a file
