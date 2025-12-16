@@ -198,9 +198,9 @@ jobs:
 
           // Main update function
 
-          // Global variables for tracking repositories
-let reposData = [];
-let existingReposList = [];
+           // Global variables for tracking repositories
+ let reposData = [];
+ let existingReposList = [];
 
           async function updateRepoStatuses() {
             const allRepos = await discoverRepositories();
