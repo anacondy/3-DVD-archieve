@@ -347,59 +347,37 @@ jobs:
             fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
             console.log('repos.json updated successfully.');
 
+            // Generate wiki content
+            let wikiContent = `# Repository Status and History\n\n`;
+            wikiContent += `## Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})\n`;
+            wikiContent += `- Previous version (${formatDate(existingReposList[0]?.date || new Date().toISOString())}): ${previousReposCount} repositories\n`;
+            wikiContent += `- New version (${formatDate(new Date().toISOString())}): ${reposData.length} repositories\n`;
+            wikiContent += `- Additions: ${changeLog.added.length} repositories\n`;
+            wikiContent += `- Deletions: ${changeLog.deleted.length} repositories\n\n`;
+
+            wikiContent += `| Repository Name       | Link                                  | Added Date       | Creation Date   | Date Gap       | Workflow Version |\n`;
+            wikiContent += `|-----------------------|---------------------------------------|------------------|------------------|----------------|------------------|\n`;
+
+            reposData.forEach(repo => {
+              wikiContent += `| ${repo.name} | [Link](${repo.url}) | ${formatDate(repo.date)} | ${formatDate(repo.created_at)} | ${repo.date_gap} | #${repo.workflow_version} |\n`;
+            });
+
+            // Save wiki content to a file
+            fs.writeFileSync('Repository-Status-and-History.md', wikiContent);
+            console.log('Repository-Status-and-History.md generated successfully.');
+
             return {
               success: true,
               reposCount: reposData.length,
               changeLog: changeLog,
               hasChanges: changeLog.added.length > 0 || changeLog.deleted.length > 0 ||
                 changeLog.statusChanged.length > 0 || changeLog.dateUpdated.length > 0,
-              workflowVersion: workflowVersion,
-              reposData: reposData,
-              existingReposList: existingReposList
+              workflowVersion: workflowVersion
             };
           }
 
-          // Function to update the wiki page
-          async function updateWikiPage(result) {
-            const wikiPageName = 'Repository-Status-and-History';
-            let wikiContent = `# Repository Status and History\n\n`;
-
-            // Add summary section
-            wikiContent += `## Workflow #${result.workflowVersion} (${formatDate(new Date().toISOString())})\n`;
-            wikiContent += `- Previous version (${formatDate(result.existingReposList[0]?.date || new Date().toISOString())}): ${result.existingReposList.length} repositories\n`;
-            wikiContent += `- New version (${formatDate(new Date().toISOString())}): ${result.reposData.length} repositories\n`;
-            wikiContent += `- Additions: ${result.changeLog.added.length} repositories\n`;
-            wikiContent += `- Deletions: ${result.changeLog.deleted.length} repositories\n\n`;
-
-            // Add table
-            wikiContent += `| Repository Name       | Link                                  | Added Date       | Creation Date   | Date Gap       | Workflow Version |\n`;
-            wikiContent += `|-----------------------|---------------------------------------|------------------|------------------|----------------|------------------|\n`;
-
-            result.reposData.forEach(repo => {
-              wikiContent += `| ${repo.name} | [Link](${repo.url}) | ${formatDate(repo.date)} | ${formatDate(repo.created_at)} | ${repo.date_gap} | #${repo.workflow_version} |\n`;
-            });
-
-            // Update the wiki page
-            try {
-              const wikiResponse = await githubApiRequest(
-                `/repos/${userName}/${process.env.GITHUB_REPOSITORY.split('/')[1]}/wiki/pages`,
-                'POST',
-                JSON.stringify({
-                  title: wikiPageName,
-                  content: wikiContent,
-                  format: 'markdown'
-                })
-              );
-              console.log('Wiki page updated successfully.');
-            } catch (error) {
-              console.error('Failed to update wiki page:', error.message);
-            }
-          }
-
-          updateRepoStatuses().then(async (result) => {
+          updateRepoStatuses().then((result) => {
             console.log(`\nWorkflow completed successfully!`);
-            console.log(`Result: ${JSON.stringify(result)}`);
-            await updateWikiPage(result);
             process.exit(0);
           }).catch(error => {
             console.error('Fatal error updating repository statuses:', error);
@@ -413,10 +391,11 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add repos.json
+          git add Repository-Status-and-History.md
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Auto-update repository status [skip ci]"
+            git commit -m "Auto-update repository status and wiki page [skip ci]"
             git push
             echo "Changes committed and pushed"
           fi
