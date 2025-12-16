@@ -396,3 +396,15 @@ jobs:
             git push
             echo "Changes committed and pushed"
           fi
+
+      - name: Push to Wiki
+        run: |
+          cd ..
+          git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git
+          cd 3-DVD-archieve.wiki
+          cp ../3-DVD-archieve/Repository-Status-and-History.md .
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add Repository-Status-and-History.md
+          git commit -m "Auto-update wiki page [skip ci]"
+          git push
