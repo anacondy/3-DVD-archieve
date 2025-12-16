@@ -197,11 +197,15 @@ jobs:
           }
 
           // Main update function
+
+          // Global variables for tracking repositories
+let reposData = [];
+let existingReposList = [];
+
           async function updateRepoStatuses() {
             const allRepos = await discoverRepositories();
 
             let existingRepos = {};
-            let existingReposList = [];
             try {
               existingReposList = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
               existingReposList.forEach(repo => {
@@ -211,7 +215,7 @@ jobs:
               console.log('No existing repos.json found, starting fresh.');
             }
 
-            const reposData = [];
+             reposData = [];
             const changeLog = {
               added: [],
               deleted: [],
