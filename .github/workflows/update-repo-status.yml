@@ -197,15 +197,11 @@ jobs:
           }
 
           // Main update function
-
-           // Global variables for tracking repositories
- let reposData = [];
- let existingReposList = [];
-
           async function updateRepoStatuses() {
             const allRepos = await discoverRepositories();
 
             let existingRepos = {};
+            let existingReposList = [];
             try {
               existingReposList = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
               existingReposList.forEach(repo => {
@@ -215,7 +211,7 @@ jobs:
               console.log('No existing repos.json found, starting fresh.');
             }
 
-             reposData = [];
+            const reposData = [];
             const changeLog = {
               added: [],
               deleted: [],
@@ -357,27 +353,29 @@ jobs:
               changeLog: changeLog,
               hasChanges: changeLog.added.length > 0 || changeLog.deleted.length > 0 ||
                 changeLog.statusChanged.length > 0 || changeLog.dateUpdated.length > 0,
-              workflowVersion: workflowVersion
+              workflowVersion: workflowVersion,
+              reposData: reposData,
+              existingReposList: existingReposList
             };
           }
 
           // Function to update the wiki page
-          async function updateWikiPage(reposData, changeLog, previousReposCount, newReposCount, additions, deletions, workflowVersion) {
+          async function updateWikiPage(result) {
             const wikiPageName = 'Repository-Status-and-History';
             let wikiContent = `# Repository Status and History\n\n`;
 
             // Add summary section
-            wikiContent += `## Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})\n`;
-            wikiContent += `- Previous version (${formatDate(reposData[0]?.date || new Date().toISOString())}): ${previousReposCount} repositories\n`;
-            wikiContent += `- New version (${formatDate(new Date().toISOString())}): ${newReposCount} repositories\n`;
-            wikiContent += `- Additions: ${additions} repositories\n`;
-            wikiContent += `- Deletions: ${deletions} repositories\n\n`;
+            wikiContent += `## Workflow #${result.workflowVersion} (${formatDate(new Date().toISOString())})\n`;
+            wikiContent += `- Previous version (${formatDate(result.existingReposList[0]?.date || new Date().toISOString())}): ${result.existingReposList.length} repositories\n`;
+            wikiContent += `- New version (${formatDate(new Date().toISOString())}): ${result.reposData.length} repositories\n`;
+            wikiContent += `- Additions: ${result.changeLog.added.length} repositories\n`;
+            wikiContent += `- Deletions: ${result.changeLog.deleted.length} repositories\n\n`;
 
             // Add table
             wikiContent += `| Repository Name       | Link                                  | Added Date       | Creation Date   | Date Gap       | Workflow Version |\n`;
             wikiContent += `|-----------------------|---------------------------------------|------------------|------------------|----------------|------------------|\n`;
 
-            reposData.forEach(repo => {
+            result.reposData.forEach(repo => {
               wikiContent += `| ${repo.name} | [Link](${repo.url}) | ${formatDate(repo.date)} | ${formatDate(repo.created_at)} | ${repo.date_gap} | #${repo.workflow_version} |\n`;
             });
 
@@ -401,15 +399,7 @@ jobs:
           updateRepoStatuses().then(async (result) => {
             console.log(`\nWorkflow completed successfully!`);
             console.log(`Result: ${JSON.stringify(result)}`);
-            await updateWikiPage(
-              reposData,
-              result.changeLog,
-              existingReposList.length,
-              reposData.length,
-              result.changeLog.added.length,
-              result.changeLog.deleted.length,
-              result.workflowVersion
-            );
+            await updateWikiPage(result);
             process.exit(0);
           }).catch(error => {
             console.error('Fatal error updating repository statuses:', error);
