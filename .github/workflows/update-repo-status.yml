@@ -398,13 +398,22 @@ jobs:
           fi
 
       - name: Push to Wiki
+        continue-on-error: true
         run: |
           cd ..
-          git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git
-          cd 3-DVD-archieve.wiki
-          cp ../3-DVD-archieve/Repository-Status-and-History.md .
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add Repository-Status-and-History.md
-          git commit -m "Auto-update wiki page [skip ci]"
-          git push
+          # Try to clone the wiki repository - this may fail if wiki is not enabled
+          if git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git 2>/dev/null; then
+            cd 3-DVD-archieve.wiki
+            cp ../3-DVD-archieve/Repository-Status-and-History.md .
+            git config --global user.name 'github-actions[bot]'
+            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+            git add Repository-Status-and-History.md
+            if git diff --staged --quiet; then
+              echo "No wiki changes to commit"
+            else
+              git commit -m "Auto-update wiki page [skip ci]"
+              git push || echo "Wiki push failed - this is non-critical"
+            fi
+          else
+            echo "Wiki repository not accessible - skipping wiki update. This is non-critical."
+          fi
