@@ -462,21 +462,18 @@
             try {
                 const response = await fetch('repos.json');
                 const data = await response.json();
-                rawRepoList = data.map(repo => {
-                    // Add status indicator to name if not active
-                    let displayName = repo.name;
-                    if (repo.status === '404') {
-                        displayName += ' ❌';
-                    } else if (repo.status === 'building') {
-                        displayName += ' ⏳';
-                    }
-                    return {
-                        name: displayName,
-                        url: repo.url,
-                        date: repo.date,
-                        status: repo.status
-                    };
-                });
+                // Filter to only include repos that are active (online on GitHub Pages)
+                // This excludes private repos and repos with 404 or building status
+                rawRepoList = data
+                    .filter(repo => repo.status === 'active')
+                    .map(repo => {
+                        return {
+                            name: repo.name,
+                            url: repo.url,
+                            date: repo.date,
+                            status: repo.status
+                        };
+                    });
                 // Sort by date descending (newest first)
                 rawRepoList.sort((a, b) => new Date(b.date) - new Date(a.date));
             } catch (error) {
