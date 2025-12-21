@@ -4,6 +4,8 @@ A retro DVD-style interface for browsing the Anacondy archive collection.
 
 **Live Site:** https://anacondy.github.io/3-DVD-archieve/
 
+**Repository Status & History:** [View Status](Repository-Status-and-History.md)
+
 ## Screenshots
 
 ### Desktop View
