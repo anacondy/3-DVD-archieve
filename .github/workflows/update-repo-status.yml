@@ -10,6 +10,8 @@ permissions:
 jobs:
   update-status:
     runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.commit.outputs.has_changes }}
 
     steps:
       - name: Checkout repository
@@ -384,6 +386,7 @@ jobs:
           EOF
 
       - name: Commit and push if changed
+        id: commit
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
@@ -391,10 +394,12 @@ jobs:
           git add Repository-Status-and-History.md
           if git diff --staged --quiet; then
             echo "No changes to commit"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
           else
             git commit -m "Auto-update repository status and wiki page [skip ci]"
             git push
             echo "Changes committed and pushed"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Push to Wiki
@@ -420,6 +425,7 @@ jobs:
 
   deploy-pages:
     needs: update-status
+    if: needs.update-status.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -429,6 +435,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Wait for branch update propagation
+        run: sleep 30
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
