@@ -1,0 +1,35 @@
+name: Update Repository Status Wiki
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Runs hourly
+  workflow_dispatch:
+
+jobs:
+  update-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Wiki
+        uses: actions/checkout@v4
+        with:
+          repository: anacondy/3-DVD-archieve.wiki
+          path: wiki
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch Repository Data
+        run: |
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               https://api.github.com/user/repos > repos.json
+
+      - name: Process Data and Update Wiki
+        run: |
+          python3 update_wiki.py
+
+      - name: Commit Changes
+        run: |
+          cd wiki
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add .
+          git commit -m "Update repository status"
+          git push
