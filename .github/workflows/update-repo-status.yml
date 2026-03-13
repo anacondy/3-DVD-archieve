@@ -177,9 +177,20 @@ jobs:
           async function hasGitHubPages(repoName) {
             try {
               const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
-              return pages && pages.status;
+              // Pages is configured if we get a valid response.
+              // For branch-based Pages: pages.status is "built", "building", etc.
+              // For Actions-based Pages: pages.build_type is "workflow" and status may be null.
+              return !!(pages && (pages.html_url || pages.status || pages.build_type !== undefined));
             } catch (error) {
               if (error.statusCode === 404) {
+                // Pages API returns 404 for some repos using GitHub Actions deployment
+                // when the token doesn't belong to that repo. Fall back to URL check.
+                const url = `https://${userName}.github.io/${repoName}/`;
+                const urlStatus = await checkUrl(url);
+                if (urlStatus === 'active') {
+                  console.log(` GitHub Pages detected via URL check (Actions-based deployment).`);
+                  return true;
+                }
                 return false;
               }
               if (error.statusCode === 403) {
@@ -187,7 +198,7 @@ jobs:
                 await delay(2000);
                 try {
                   const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
-                  return pages && pages.status;
+                  return !!(pages && (pages.html_url || pages.status || pages.build_type !== undefined));
                 } catch (retryError) {
                   console.log(` Retry failed for ${repoName}, skipping for safety`);
                   return false;
@@ -425,7 +436,6 @@ jobs:
 
   deploy-pages:
     needs: update-status
-    if: needs.update-status.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
