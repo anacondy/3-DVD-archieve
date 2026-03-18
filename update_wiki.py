@@ -33,6 +33,7 @@ def generate_markdown_table(repos):
     return "\n".join(table_rows)
 
 def update_wiki_page():
+    # Read repos.json from the current directory
     with open("repos.json", "r") as f:
         repos = json.load(f)
     
@@ -52,6 +53,8 @@ def update_wiki_page():
 {table_content}
 """
     
+    # Ensure the wiki directory exists
+    os.makedirs("wiki", exist_ok=True)
     with open("wiki/Repository-Status-and-History.md", "w") as f:
         f.write(wiki_content)
 
