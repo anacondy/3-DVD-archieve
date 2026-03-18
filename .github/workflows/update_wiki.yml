@@ -9,6 +9,11 @@ jobs:
   update-wiki:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Main Repo
+        uses: actions/checkout@v4
+        with:
+          path: main
+
       - name: Checkout Wiki
         uses: actions/checkout@v4
         with:
@@ -23,6 +28,7 @@ jobs:
 
       - name: Process Data and Update Wiki
         run: |
+          cd main
           python3 update_wiki.py
 
       - name: Commit Changes
