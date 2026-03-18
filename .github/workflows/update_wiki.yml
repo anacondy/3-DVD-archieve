@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Main Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.1
         with:
           path: main
 
       - name: Checkout Wiki
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.1
         with:
           repository: anacondy/3-DVD-archieve.wiki
           path: wiki
