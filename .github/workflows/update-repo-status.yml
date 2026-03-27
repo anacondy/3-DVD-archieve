@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
 
 jobs:
   update-status:
@@ -22,6 +21,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Validate token
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          if [ -z "$PUBLIC_REPO_TOKEN" ]; then
+            echo "::error::secret 'PUBLIC_REPO_TOKEN' is not set. Please add it to your repository secrets with 'repo', 'public_repo', and 'read:org' scopes."
+            echo "## ❌ Workflow failed: Missing token" >> $GITHUB_STEP_SUMMARY
+            echo "The secret **PUBLIC_REPO_TOKEN** is not configured. Add it to your repository secrets." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Discover and update repositories
         env:
@@ -71,7 +81,7 @@ jobs:
                 }
               };
 
-              const makeRequest = () => {
+              const makeRequest = (attemptsLeft) => {
                 const req = https.request(options, (res) => {
                   let data = '';
 
@@ -87,11 +97,11 @@ jobs:
                         reject(new Error(`Failed to parse JSON response: ${parseError.message}`));
                       }
                     } else if (res.statusCode === 403 && data.includes('API rate limit exceeded')) {
-                      if (retries > 0) {
-                        console.log(`Rate limit exceeded. Retrying in 10 seconds... (${retries} retries left)`);
-                        setTimeout(makeRequest, 10000);
+                      if (attemptsLeft > 0) {
+                        console.log(`Rate limit exceeded. Retrying in 10 seconds... (${attemptsLeft} retries left)`);
+                        setTimeout(() => makeRequest(attemptsLeft - 1), 10000);
                       } else {
-                        const error = new Error(`GitHub API rate limit exceeded after ${retries} retries`);
+                        const error = new Error(`GitHub API rate limit exceeded after all retries`);
                         error.statusCode = res.statusCode;
                         error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
                         reject(error);
@@ -108,9 +118,9 @@ jobs:
                 });
 
                 req.on('error', (error) => {
-                  if (retries > 0) {
-                    console.log(`Request error. Retrying in 5 seconds... (${retries} retries left)`);
-                    setTimeout(makeRequest, 5000);
+                  if (attemptsLeft > 0) {
+                    console.log(`Request error. Retrying in 5 seconds... (${attemptsLeft} retries left)`);
+                    setTimeout(() => makeRequest(attemptsLeft - 1), 5000);
                   } else {
                     reject(error);
                   }
@@ -123,7 +133,7 @@ jobs:
                 req.end();
               };
 
-              makeRequest();
+              makeRequest(retries);
             });
           }
 
@@ -174,23 +184,43 @@ jobs:
             const allRepos = [];
             let page = 1;
             const maxPages = 50;
+            const maxPageRetries = 3;
 
             while (page <= maxPages) {
-              try {
-                const repos = await githubApiRequest(`/users/${userName}/repos?type=public&per_page=100&page=${page}`);
+              let pageRetries = maxPageRetries;
 
-                if (!repos || repos.length === 0) break;
+              while (pageRetries > 0) {
+                try {
+                  const repos = await githubApiRequest(`/users/${userName}/repos?type=public&per_page=100&page=${page}`);
 
-                allRepos.push(...repos);
-                console.log(`Fetched page ${page}: ${repos.length} repositories`);
+                  // Empty result (or null) means we've fetched all pages — this is not a transient error
+                  if (!repos || repos.length === 0) {
+                    console.log(`Total repositories found: ${allRepos.length}`);
+                    return allRepos;
+                  }
 
-                if (repos.length < 100) break;
-                page++;
-                await delay(2000); // 2-second delay between pages
-              } catch (error) {
-                console.error(`Error fetching repositories on page ${page}:`, error.message);
-                page++;
-                await delay(5000); // Wait 5 seconds before retrying
+                  allRepos.push(...repos);
+                  console.log(`Fetched page ${page}: ${repos.length} repositories`);
+
+                  if (repos.length < 100) {
+                    console.log(`Total repositories found: ${allRepos.length}`);
+                    return allRepos;
+                  }
+
+                  page++;
+                  await delay(2000); // 2-second delay between pages
+                  break; // Page fetched successfully, move to next page
+                } catch (error) {
+                  pageRetries--;
+                  console.error(`Error fetching repositories on page ${page} (${pageRetries} retries left):`, error.message);
+                  if (pageRetries > 0) {
+                    await delay(5000); // Wait 5 seconds before retrying the same page
+                  } else {
+                    console.error(`Failed to fetch page ${page} after ${maxPageRetries} attempts, stopping discovery.`);
+                    console.log(`Total repositories found so far: ${allRepos.length}`);
+                    return allRepos;
+                  }
+                }
               }
             }
 
@@ -441,17 +471,20 @@ jobs:
         run: |
           if [[ "$(git ls-remote https://github.com/anacondy/3-DVD-archieve.wiki.git | wc -l)" -gt 0 ]]; then
             cd ..
-            git clone https://${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git 2>/dev/null || echo "Wiki clone failed, skipping..."
-            cd 3-DVD-archieve.wiki
-            cp ../3-DVD-archieve/Repository-Status-and-History.md .
-            git config --global user.name 'github-actions[bot]'
-            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-            git add Repository-Status-and-History.md
-            if git diff --staged --quiet; then
-              echo "No wiki changes to commit"
+            if git clone https://x-access-token:${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git; then
+              cd 3-DVD-archieve.wiki
+              cp ../3-DVD-archieve/Repository-Status-and-History.md .
+              git config --global user.name 'github-actions[bot]'
+              git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+              git add Repository-Status-and-History.md
+              if git diff --staged --quiet; then
+                echo "No wiki changes to commit"
+              else
+                git commit -m "Auto-update wiki page [skip ci]"
+                git push || echo "Wiki push failed - this is non-critical"
+              fi
             else
-              git commit -m "Auto-update wiki page [skip ci]"
-              git push || echo "Wiki push failed - this is non-critical"
+              echo "Wiki clone failed, skipping wiki update."
             fi
           else
             echo "Wiki repository not accessible - skipping wiki update. This is non-critical."
