@@ -268,10 +268,53 @@ jobs:
 
           // Main update function
           async function updateRepoStatuses() {
+            // Smart resume logic: Check if we have fresh data (< 3 hours old)
+            let shouldSkipDiscovery = false;
+            let existingReposList = [];
+            let existingRepos = {};
+            
+            try {
+              const reposJsonPath = 'repos.json';
+              if (fs.existsSync(reposJsonPath)) {
+                const stats = fs.statSync(reposJsonPath);
+                const fileAgeMinutes = (Date.now() - stats.mtimeMs) / 60000;
+                const lastUpdateTime = new Date(stats.mtime).toISOString();
+                
+                // If file is less than 3 hours old AND we're not in scheduled UTC run, use cached data
+                const isScheduledRun = (process.env.GITHUB_EVENT_NAME === 'schedule');
+                
+                if (fileAgeMinutes < 180 && !isScheduledRun) {
+                  console.log(`Recent scan found (${fileAgeMinutes.toFixed(1)} minutes old).`);
+                  console.log(`Skipping discovery, using cached data from ${lastUpdateTime}.`);
+                  shouldSkipDiscovery = true;
+                  existingReposList = JSON.parse(fs.readFileSync(reposJsonPath, 'utf8'));
+                  existingReposList.forEach(repo => {
+                    existingRepos[repo.name] = repo;
+                  });
+                }
+              }
+            } catch (error) {
+              console.log('No cached data available, will perform full discovery.');
+            }
+            
+            // If we skipped discovery due to cache, go directly to deployment steps
+            if (shouldSkipDiscovery) {
+              console.log('Skipping repository discovery - using cached data.');
+              return {
+                success: true,
+                reposCount: existingReposList.length,
+                changeLog: { added: [], deleted: [], statusChanged: [], dateUpdated: [], errors: [] },
+                hasChanges: false,
+                workflowVersion: process.env.GITHUB_RUN_NUMBER || 'Unknown',
+                usedCache: true
+              };
+            }
+            
+            // Perform full discovery
             const allRepos = await discoverRepositories();
 
-            let existingRepos = {};
-            let existingReposList = [];
+            existingRepos = {};
+            existingReposList = [];
             try {
               existingReposList = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
               existingReposList.forEach(repo => {
