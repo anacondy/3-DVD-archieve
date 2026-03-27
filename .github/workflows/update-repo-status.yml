@@ -88,10 +88,11 @@ jobs:
                       }
                     } else if (res.statusCode === 403 && data.includes('API rate limit exceeded')) {
                       if (retries > 0) {
+                        retries--;
                         console.log(`Rate limit exceeded. Retrying in 10 seconds... (${retries} retries left)`);
                         setTimeout(makeRequest, 10000);
                       } else {
-                        const error = new Error(`GitHub API rate limit exceeded after ${retries} retries`);
+                        const error = new Error(`GitHub API rate limit exceeded after all retries`);
                         error.statusCode = res.statusCode;
                         error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
                         reject(error);
@@ -109,6 +110,7 @@ jobs:
 
                 req.on('error', (error) => {
                   if (retries > 0) {
+                    retries--;
                     console.log(`Request error. Retrying in 5 seconds... (${retries} retries left)`);
                     setTimeout(makeRequest, 5000);
                   } else {
@@ -265,7 +267,7 @@ jobs:
               console.log(`[${i + 1}/${allRepos.length}] Checking ${repo.name}...`);
 
               const pagesEnabled = await hasGitHubPages(repo.name);
-              await delay(200);
+              await delay(5000); // 5-second delay between API calls
 
               if (!pagesEnabled) {
                 console.log(` No GitHub Pages enabled, skipping.`);
@@ -341,7 +343,7 @@ jobs:
                 });
               }
 
-              await delay(200);
+              await delay(5000); // 5-second delay between API calls
             }
 
             for (const repoName in existingRepos) {
