@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 jobs:
   update-status:
@@ -24,7 +25,7 @@ jobs:
 
       - name: Discover and update repositories
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           node << 'EOF'
@@ -55,9 +56,9 @@ jobs:
             return `${gap} days`;
           }
 
-          // Function to make GitHub API requests
-          function githubApiRequest(path, method = 'GET', body = null) {
-            return new Promise((resolve, reject) => {
+          // Function to make GitHub API requests with retries
+          async function githubApiRequest(path, method = 'GET', body = null, retries = 5) {
+            return new Promise(async (resolve, reject) => {
               const options = {
                 hostname: 'api.github.com',
                 path: path,
@@ -65,48 +66,69 @@ jobs:
                 headers: {
                   'User-Agent': 'RepoStatusChecker/1.0',
                   'Accept': 'application/vnd.github+json',
-                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                  'Authorization': `Bearer ${process.env.PUBLIC_REPO_TOKEN}`,
                   'X-GitHub-Api-Version': '2022-11-28'
                 }
               };
 
-              const req = https.request(options, (res) => {
-                let data = '';
+              const makeRequest = () => {
+                const req = https.request(options, (res) => {
+                  let data = '';
 
-                res.on('data', (chunk) => {
-                  data += chunk;
+                  res.on('data', (chunk) => {
+                    data += chunk;
+                  });
+
+                  res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                      try {
+                        resolve(JSON.parse(data));
+                      } catch (parseError) {
+                        reject(new Error(`Failed to parse JSON response: ${parseError.message}`));
+                      }
+                    } else if (res.statusCode === 403 && data.includes('API rate limit exceeded')) {
+                      if (retries > 0) {
+                        console.log(`Rate limit exceeded. Retrying in 10 seconds... (${retries} retries left)`);
+                        setTimeout(makeRequest, 10000);
+                      } else {
+                        const error = new Error(`GitHub API rate limit exceeded after ${retries} retries`);
+                        error.statusCode = res.statusCode;
+                        error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
+                        reject(error);
+                      }
+                    } else if (res.statusCode === 404 && method === 'GET') {
+                      resolve(null);
+                    } else {
+                      const error = new Error(`GitHub API returned status ${res.statusCode}`);
+                      error.statusCode = res.statusCode;
+                      error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
+                      reject(error);
+                    }
+                  });
                 });
 
-                res.on('end', () => {
-                  if (res.statusCode >= 200 && res.statusCode < 300) {
-                    try {
-                      resolve(JSON.parse(data));
-                    } catch (parseError) {
-                      reject(new Error(`Failed to parse JSON response: ${parseError.message}`));
-                    }
+                req.on('error', (error) => {
+                  if (retries > 0) {
+                    console.log(`Request error. Retrying in 5 seconds... (${retries} retries left)`);
+                    setTimeout(makeRequest, 5000);
                   } else {
-                    const error = new Error(`GitHub API returned status ${res.statusCode}`);
-                    error.statusCode = res.statusCode;
-                    error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
                     reject(error);
                   }
                 });
-              });
 
-              req.on('error', (error) => {
-                reject(error);
-              });
+                if (body) {
+                  req.write(body);
+                }
 
-              if (body) {
-                req.write(body);
-              }
+                req.end();
+              };
 
-              req.end();
+              makeRequest();
             });
           }
 
           // Function to check if URL is accessible
-          function checkUrl(url) {
+          async function checkUrl(url) {
             return new Promise((resolve) => {
               const options = {
                 method: 'HEAD',
@@ -118,6 +140,8 @@ jobs:
 
               const req = https.request(url, options, (res) => {
                 if (res.statusCode === 200) {
+                  resolve('active');
+                } else if (res.statusCode === 301 || res.statusCode === 302) {
                   resolve('active');
                 } else if (res.statusCode === 404) {
                   resolve('404');
@@ -162,10 +186,11 @@ jobs:
 
                 if (repos.length < 100) break;
                 page++;
-                await delay(200);
+                await delay(2000); // 2-second delay between pages
               } catch (error) {
                 console.error(`Error fetching repositories on page ${page}:`, error.message);
-                break;
+                page++;
+                await delay(5000); // Wait 5 seconds before retrying
               }
             }
 
@@ -177,9 +202,6 @@ jobs:
           async function hasGitHubPages(repoName) {
             try {
               const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
-              // Pages is configured if we get a valid response.
-              // For branch-based Pages: pages.status is "built", "building", etc.
-              // For Actions-based Pages: pages.build_type is "workflow" and status may be null.
               return !!(pages && (pages.html_url || pages.status || pages.build_type !== undefined));
             } catch (error) {
               if (error.statusCode === 404) {
@@ -195,7 +217,7 @@ jobs:
               }
               if (error.statusCode === 403) {
                 console.log(` Rate limited on ${repoName}, waiting...`);
-                await delay(2000);
+                await delay(5000);
                 try {
                   const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
                   return !!(pages && (pages.html_url || pages.status || pages.build_type !== undefined));
@@ -414,11 +436,12 @@ jobs:
           fi
 
       - name: Push to Wiki
+        id: wiki
         continue-on-error: true
         run: |
-          cd ..
-          # Try to clone the wiki repository - this may fail if wiki is not enabled
-          if git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git 2>/dev/null; then
+          if [[ "$(git ls-remote https://github.com/anacondy/3-DVD-archieve.wiki.git | wc -l)" -gt 0 ]]; then
+            cd ..
+            git clone https://${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git 2>/dev/null || echo "Wiki clone failed, skipping..."
             cd 3-DVD-archieve.wiki
             cp ../3-DVD-archieve/Repository-Status-and-History.md .
             git config --global user.name 'github-actions[bot]'
