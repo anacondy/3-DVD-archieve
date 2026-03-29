@@ -2,7 +2,7 @@ name: Update Repository Status Wiki
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Runs every 6 hours
+    - cron: '0 */3 * * *'  # Evaluates every 3 hours; actual update is gated to >=27 hours
   workflow_dispatch:
 
 permissions:
@@ -18,30 +18,51 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout Main Repo
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4
         with:
           path: main
 
       - name: Checkout Wiki
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4
         with:
           repository: anacondy/3-DVD-archieve.wiki
           path: wiki
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check 27-hour update window
+        id: update_window
+        run: |
+          LAST_COMMIT_TS=$(git -C wiki log -1 --format=%ct 2>/dev/null || echo 0)
+          NOW_TS=$(date +%s)
+          MIN_INTERVAL=$((27 * 60 * 60))
+          ELAPSED=$((NOW_TS - LAST_COMMIT_TS))
+
+          if [ "$LAST_COMMIT_TS" -eq 0 ] || [ "$ELAPSED" -ge "$MIN_INTERVAL" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Update allowed (>=27 hours since last wiki commit)."
+          else
+            HOURS=$((ELAPSED / 3600))
+            REM_MIN=$(((ELAPSED % 3600) / 60))
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping update: only ${HOURS}h ${REM_MIN}m since last wiki commit."
+          fi
+
       - name: Fetch Repository Data
+        if: steps.update_window.outputs.should_run == 'true'
         run: |
           curl --fail --silent --show-error \
                "https://api.github.com/users/anacondy/repos?type=public&per_page=100" \
                > repos.json
 
       - name: Process Data and Update Wiki
+        if: steps.update_window.outputs.should_run == 'true'
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           python3 main/update_wiki.py
 
       - name: Commit Changes
+        if: steps.update_window.outputs.should_run == 'true'
         run: |
           cd wiki
           git config --global user.name "GitHub Actions"
@@ -53,3 +74,8 @@ jobs:
             git commit -m "Update repository status"
             git push
           fi
+
+      - name: Skip Notice
+        if: steps.update_window.outputs.should_run != 'true'
+        run: |
+          echo "Workflow completed without update because 27-hour window has not elapsed yet."
