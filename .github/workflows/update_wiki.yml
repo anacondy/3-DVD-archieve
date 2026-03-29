@@ -2,12 +2,20 @@ name: Update Repository Status Wiki
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs hourly
+    - cron: '0 */6 * * *'  # Runs every 6 hours
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-repository-status-wiki
+  cancel-in-progress: true
 
 jobs:
   update-wiki:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Main Repo
         uses: actions/checkout@v4.1.1
@@ -23,8 +31,9 @@ jobs:
 
       - name: Fetch Repository Data
         run: |
-          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-               https://api.github.com/user/repos > repos.json
+          curl --fail --silent --show-error \
+               "https://api.github.com/users/anacondy/repos?type=public&per_page=100" \
+               > repos.json
 
       - name: Process Data and Update Wiki
         env:

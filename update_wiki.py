@@ -2,6 +2,20 @@ import json
 import os
 from datetime import datetime
 
+
+def load_repositories(path):
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    if isinstance(payload, dict):
+        message = payload.get("message", "Unexpected JSON object in repos file")
+        raise ValueError(f"Invalid repositories payload: {message}")
+
+    if not isinstance(payload, list):
+        raise ValueError("Invalid repositories payload: expected a JSON array")
+
+    return payload
+
 def parse_date(date_str):
     try:
         return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ").strftime("%dth %b, %Y")
@@ -21,6 +35,9 @@ def generate_markdown_table(repos):
     table_rows = []
     run_number = os.environ.get("GITHUB_RUN_NUMBER", "Unknown")
     for repo in repos:
+        if not isinstance(repo, dict):
+            continue
+
         name = repo.get("name", "")
         html_url = repo.get("html_url", "")
         created_at = parse_date(repo.get("created_at", ""))
@@ -35,8 +52,7 @@ def generate_markdown_table(repos):
 
 def update_wiki_page():
     # Read repos.json from the current directory
-    with open("repos.json", "r") as f:
-        repos = json.load(f)
+    repos = load_repositories("repos.json")
 
     table_content = generate_markdown_table(repos)
     run_number = os.environ.get("GITHUB_RUN_NUMBER", "Unknown")

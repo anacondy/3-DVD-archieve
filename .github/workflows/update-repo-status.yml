@@ -7,9 +7,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: update-repository-status
+  cancel-in-progress: true
+
 jobs:
   update-status:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     outputs:
       has_changes: ${{ steps.commit.outputs.has_changes }}
 
