@@ -191,6 +191,7 @@ jobs:
             while (page <= maxPages) {
               let pageRetries = 3;
               let pageSuccess = false;
+              let finished = false;
 
               while (pageRetries > 0 && !pageSuccess) {
                 try {
@@ -198,14 +199,18 @@ jobs:
 
                   if (!repos || repos.length === 0) {
                     pageSuccess = true;
-                    break; // No more repos, exit outer loop
+                    finished = true;
+                    break;
                   }
 
                   allRepos.push(...repos);
                   console.log(`Fetched page ${page}: ${repos.length} repositories`);
                   pageSuccess = true;
 
-                  if (repos.length < 100) break; // Last page, exit outer loop
+                  if (repos.length < 100) {
+                    finished = true;
+                    break;
+                  }
                   page++;
                   await delay(2000); // 2-second delay between pages
                 } catch (error) {
@@ -220,13 +225,13 @@ jobs:
                   } else {
                     console.error(`Failed to fetch page ${page} after all retries. Stopping discovery.`);
                     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY || '/dev/null', `- ❌ Failed to fetch page ${page} after all retries\n`);
-                    break; // Exit outer loop on complete failure
+                    finished = true;
+                    break;
                   }
                 }
               }
 
-              if (!pageSuccess) break; // Exit if we failed to fetch a page
-              if (page > maxPages) break; // Exit if we've reached max pages
+              if (!pageSuccess || finished) break;
             }
 
             console.log(`Total repositories found: ${allRepos.length}`);

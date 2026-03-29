@@ -19,30 +19,32 @@ def calculate_date_gap(added_date_str, created_date_str):
 
 def generate_markdown_table(repos):
     table_rows = []
+    run_number = os.environ.get("GITHUB_RUN_NUMBER", "Unknown")
     for repo in repos:
         name = repo.get("name", "")
         html_url = repo.get("html_url", "")
         created_at = parse_date(repo.get("created_at", ""))
         updated_at = parse_date(repo.get("updated_at", ""))
         date_gap = calculate_date_gap(updated_at, created_at)
-        
+
         table_rows.append(
-            f"| {name} | [Link]({html_url}) | {updated_at} | {created_at} | {date_gap} | active | #128 |"
+            f"| {name} | [Link]({html_url}) | {updated_at} | {created_at} | {date_gap} | active | #{run_number} |"
         )
-    
+
     return "\n".join(table_rows)
 
 def update_wiki_page():
     # Read repos.json from the current directory
     with open("repos.json", "r") as f:
         repos = json.load(f)
-    
+
     table_content = generate_markdown_table(repos)
-    
+    run_number = os.environ.get("GITHUB_RUN_NUMBER", "Unknown")
+
     # Update the wiki page content
     wiki_content = f"""# Repository Status and History
 
-## Workflow #128 ({datetime.now().strftime("%dth %b, %Y")})
+## Workflow #{run_number} ({datetime.now().strftime("%dth %b, %Y")})
 - Previous version: {len(repos)} repositories
 - New version: {len(repos)} repositories
 - Additions: 0 repositories
