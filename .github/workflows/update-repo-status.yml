@@ -1,22 +1,23 @@
-name: Update Repository Status
+name: System Status Core Updater
+
 on:
   schedule:
-    - cron: '0 0 * * *'  # Runs every day at 00:00 UTC
-  workflow_dispatch: # Allow manual trigger
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
-  group: update-repository-status
+  group: system-core-updater
   cancel-in-progress: true
 
 jobs:
   update-status:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    outputs:
-      has_changes: ${{ steps.commit.outputs.has_changes }}
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -27,22 +28,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Discover and update repositories
+      - name: Execute System Discovery & Status Check
         env:
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          # Validate PUBLIC_REPO_TOKEN is present
           if [ -z "$PUBLIC_REPO_TOKEN" ]; then
-            echo "::error::PUBLIC_REPO_TOKEN secret is not set or is empty"
-            echo "## ❌ Configuration Error" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The \`PUBLIC_REPO_TOKEN\` secret is required but not found." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Action Required:**" >> $GITHUB_STEP_SUMMARY
-            echo "1. Go to Settings → Secrets and variables → Actions" >> $GITHUB_STEP_SUMMARY
-            echo "2. Add a new repository secret named \`PUBLIC_REPO_TOKEN\`" >> $GITHUB_STEP_SUMMARY
-            echo "3. Generate a Personal Access Token with \`repo\`, \`public_repo\`, and \`read:org\` scopes" >> $GITHUB_STEP_SUMMARY
+            echo "::error::PUBLIC_REPO_TOKEN missing. Ensure it is set in repository secrets."
             exit 1
           fi
 
@@ -50,39 +42,35 @@ jobs:
           const fs = require('fs');
           const https = require('https');
 
-          // Configuration
           const userName = 'anacondy';
 
-          // Format date as dd MMM, yyyy
           function formatDate(dateString) {
+            if (!dateString || dateString === 'Unknown') return 'Unknown';
             const date = new Date(dateString);
-            const day = date.getDate();
-            const suffix = (day === 1 || day === 21 || day === 31) ? 'st' :
-                          (day === 2 || day === 22) ? 'nd' :
-                          (day === 3 || day === 23) ? 'rd' : 'th';
-            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            if (isNaN(date.getTime())) return dateString;
+            const day = date.getDate().toString().padStart(2, '0');
+            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
             const month = monthNames[date.getMonth()];
             const year = date.getFullYear();
-            return `${day}${suffix} ${month}, ${year}`;
+            return `${day}-${month}-${year}`;
           }
 
-          // Calculate date gap
           function calculateDateGap(creationDate, additionDate) {
             const creation = new Date(creationDate);
             const addition = new Date(additionDate);
+            if (isNaN(creation.getTime()) || iandN(addition.getTime())) return 'Unknown';
             const gap = Math.floor((addition - creation) / (1000 * 60 * 60 * 24));
             return `${gap} days`;
           }
 
-          // Function to make GitHub API requests with retries
           async function githubApiRequest(path, method = 'GET', body = null, retries = 5) {
-            return new Promise(async (resolve, reject) => {
+            return new Promise((resolve, reject) => {
               const options = {
                 hostname: 'api.github.com',
                 path: path,
                 method: method,
                 headers: {
-                  'User-Agent': 'RepoStatusChecker/1.0',
+                  'User-Agent': 'SystemStatusChecker/2.0',
                   'Accept': 'application/vnd.github+json',
                   'Authorization': `Bearer ${process.env.PUBLIC_REPO_TOKEN}`,
                   'X-GitHub-Api-Version': '2022-11-28'
@@ -92,489 +80,170 @@ jobs:
               const makeRequest = () => {
                 const req = https.request(options, (res) => {
                   let data = '';
-
-                  res.on('data', (chunk) => {
-                    data += chunk;
-                  });
-
+                  res.on('data', chunk => data += chunk);
                   res.on('end', () => {
                     if (res.statusCode >= 200 && res.statusCode < 300) {
-                      try {
-                        resolve(JSON.parse(data));
-                      } catch (parseError) {
-                        reject(new Error(`Failed to parse JSON response: ${parseError.message}`));
-                      }
-                    } else if (res.statusCode === 403 && data.includes('API rate limit exceeded')) {
+                      try { resolve(JSON.parse(data)); } 
+                      catch (e) { reject(new Error(`JSON Parse Error: ${e.message}`)); }
+                    } else if (res.statusCode === 403 || res.statusCode === 429) {
                       if (retries > 0) {
-                        console.log(`Rate limit exceeded. Retrying in 10 seconds... (${retries - 1} retries left)`);
                         setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 10000);
                       } else {
-                        const error = new Error(`GitHub API rate limit exceeded after all retries`);
-                        error.statusCode = res.statusCode;
-                        error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
-                        reject(error);
+                        reject(new Error(`Rate limit exceeded`));
                       }
                     } else if (res.statusCode === 404 && method === 'GET') {
                       resolve(null);
                     } else {
-                      const error = new Error(`GitHub API returned status ${res.statusCode}`);
-                      error.statusCode = res.statusCode;
-                      error.responseData = data.length > 200 ? data.substring(0, 200) + '...' : data;
-                      reject(error);
+                      reject(new Error(`HTTP ${res.statusCode}`));
                     }
                   });
                 });
-
-                req.on('error', (error) => {
-                  if (retries > 0) {
-                    console.log(`Request error. Retrying in 5 seconds... (${retries - 1} retries left)`);
-                    setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 5000);
-                  } else {
-                    reject(error);
-                  }
+                req.on('error', (err) => {
+                  if (retries > 0) setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 5000);
+                  else reject(err);
                 });
-
-                if (body) {
-                  req.write(body);
-                }
-
+                if (body) req.write(body);
                 req.end();
               };
-
               makeRequest();
             });
           }
 
-          // Function to check if URL is accessible
           async function checkUrl(url) {
             return new Promise((resolve) => {
-              const options = {
-                method: 'HEAD',
-                timeout: 10000,
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (compatible; RepoStatusChecker/1.0)'
-                }
-              };
-
-              const req = https.request(url, options, (res) => {
-                if (res.statusCode === 200) {
-                  resolve('active');
-                } else if (res.statusCode === 301 || res.statusCode === 302) {
-                  resolve('active');
-                } else if (res.statusCode === 404) {
-                  resolve('404');
-                } else {
-                  resolve('building');
-                }
+              const req = https.request(url, { method: 'HEAD', timeout: 10000, headers: {'User-Agent': 'Mozilla/5.0'} }, (res) => {
+                if (res.statusCode === 200 || res.statusCode === 301 || res.statusCode === 302) resolve('active');
+                else if (res.statusCode === 404) resolve('404');
+                else resolve('building');
               });
-
-              req.on('error', () => {
-                resolve('404');
-              });
-
-              req.on('timeout', () => {
-                req.destroy();
-                resolve('building');
-              });
-
+              req.on('error', () => resolve('404'));
+              req.on('timeout', () => { req.destroy(); resolve('building'); });
               req.end();
             });
           }
 
-          // Function to delay between requests
-          function delay(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-          }
+          const delay = ms => new Promise(res => setTimeout(res, ms));
 
-          // Fetch all public repositories from the user
           async function discoverRepositories() {
-            console.log('Discovering repositories from GitHub...');
             const allRepos = [];
             let page = 1;
-            const maxPages = 50;
-
-            while (page <= maxPages) {
-              let pageRetries = 3;
-              let pageSuccess = false;
-              let finished = false;
-
-              while (pageRetries > 0 && !pageSuccess) {
-                try {
-                  const repos = await githubApiRequest(`/users/${userName}/repos?type=public&per_page=100&page=${page}`);
-
-                  if (!repos || repos.length === 0) {
-                    pageSuccess = true;
-                    finished = true;
-                    break;
-                  }
-
-                  allRepos.push(...repos);
-                  console.log(`Fetched page ${page}: ${repos.length} repositories`);
-                  pageSuccess = true;
-
-                  if (repos.length < 100) {
-                    finished = true;
-                    break;
-                  }
-                  page++;
-                  await delay(2000); // 2-second delay between pages
-                } catch (error) {
-                  pageRetries--;
-                  const errorMsg = `Error fetching repositories on page ${page}: ${error.message}`;
-                  console.error(errorMsg);
-                  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY || '/dev/null', `- ⚠️ ${errorMsg}\n`);
-
-                  if (pageRetries > 0) {
-                    console.log(`Retrying page ${page}... (${pageRetries} retries left)`);
-                    await delay(5000); // Wait 5 seconds before retrying same page
-                  } else {
-                    console.error(`Failed to fetch page ${page} after all retries. Stopping discovery.`);
-                    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY || '/dev/null', `- ❌ Failed to fetch page ${page} after all retries\n`);
-                    finished = true;
-                    break;
-                  }
-                }
-              }
-
-              if (!pageSuccess || finished) break;
+            while (true) {
+              const repos = await githubApiRequest(`/users/${userName}/repos?type=public&per_page=100&page=${page}`);
+              if (!repos || repos.length === 0) break;
+              allRepos.push(...repos);
+              if (repos.length < 100) break;
+              page++;
+              await delay(1000);
             }
-
-            console.log(`Total repositories found: ${allRepos.length}`);
             return allRepos;
           }
 
-          // Check if repository has GitHub Pages enabled
           async function hasGitHubPages(repoName) {
             try {
               const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
-              return !!(pages && (pages.html_url || pages.status || pages.build_type !== undefined));
+              return !!(pages && (pages.html_url || pages.status));
             } catch (error) {
-              if (error.statusCode === 404) {
-                // Pages API returns 404 for some repos using GitHub Actions deployment
-                // when the token doesn't belong to that repo. Fall back to URL check.
-                const url = `https://${userName}.github.io/${repoName}/`;
-                const urlStatus = await checkUrl(url);
-                if (urlStatus === 'active') {
-                  console.log(` GitHub Pages detected via URL check (Actions-based deployment).`);
-                  return true;
-                }
-                return false;
-              }
-              if (error.statusCode === 403) {
-                console.log(` Rate limited on ${repoName}, waiting...`);
-                await delay(5000);
-                try {
-                  const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
-                  return !!(pages && (pages.html_url || pages.status || pages.build_type !== undefined));
-                } catch (retryError) {
-                  console.log(` Retry failed for ${repoName}, skipping for safety`);
-                  return false;
-                }
-              }
-              console.log(` Error checking Pages for ${repoName} (${error.statusCode || 'unknown'}): ${error.message}. Skipping for safety.`);
-              return false;
+              const urlStatus = await checkUrl(`https://${userName}.github.io/${repoName}/`);
+              return urlStatus === 'active';
             }
           }
 
-          // Main update function
-          async function updateRepoStatuses() {
-            // Smart resume logic: Check if we have fresh data (< 3 hours old)
-            let shouldSkipDiscovery = false;
-            let existingReposList = [];
-            let existingRepos = {};
-            
-            try {
-              const reposJsonPath = 'repos.json';
-              if (fs.existsSync(reposJsonPath)) {
-                const stats = fs.statSync(reposJsonPath);
-                const fileAgeMinutes = (Date.now() - stats.mtimeMs) / 60000;
-                const lastUpdateTime = new Date(stats.mtime).toISOString();
-                
-                // If file is less than 3 hours old AND we're not in scheduled UTC run, use cached data
-                const isScheduledRun = (process.env.GITHUB_EVENT_NAME === 'schedule');
-                
-                if (fileAgeMinutes < 180 && !isScheduledRun) {
-                  console.log(`Recent scan found (${fileAgeMinutes.toFixed(1)} minutes old).`);
-                  console.log(`Skipping discovery, using cached data from ${lastUpdateTime}.`);
-                  shouldSkipDiscovery = true;
-                  existingReposList = JSON.parse(fs.readFileSync(reposJsonPath, 'utf8'));
-                  existingReposList.forEach(repo => {
-                    existingRepos[repo.name] = repo;
-                  });
-                }
-              }
-            } catch (error) {
-              console.log('No cached data available, will perform full discovery.');
-            }
-            
-            // If we skipped discovery due to cache, go directly to deployment steps
-            if (shouldSkipDiscovery) {
-              console.log('Skipping repository discovery - using cached data.');
-              return {
-                success: true,
-                reposCount: existingReposList.length,
-                changeLog: { added: [], deleted: [], statusChanged: [], dateUpdated: [], errors: [] },
-                hasChanges: false,
-                workflowVersion: process.env.GITHUB_RUN_NUMBER || 'Unknown',
-                usedCache: true
-              };
-            }
-            
-            // Perform full discovery
+          async function run() {
             const allRepos = await discoverRepositories();
-
-            existingRepos = {};
-            existingReposList = [];
+            let existingRepos = {};
             try {
-              existingReposList = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
-              existingReposList.forEach(repo => {
-                existingRepos[repo.name] = repo;
-              });
-            } catch (error) {
-              console.log('No existing repos.json found, starting fresh.');
-            }
+              const fileData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+              fileData.forEach(r => existingRepos[r.name] = r);
+            } catch(e) {}
 
             const reposData = [];
-            const changeLog = {
-              added: [],
-              deleted: [],
-              statusChanged: [],
-              dateUpdated: [],
-              errors: []
-            };
-
-            console.log('\nChecking repositories for GitHub Pages...');
-
             const workflowVersion = process.env.GITHUB_RUN_NUMBER || 'Unknown';
-            const previousReposCount = existingReposList.length;
 
-            for (let i = 0; i < allRepos.length; i++) {
-              const repo = allRepos[i];
-              console.log(`[${i + 1}/${allRepos.length}] Checking ${repo.name}...`);
+            for (const repo of allRepos) {
+              const hasPages = await hasGitHubPages(repo.name);
+              if (!hasPages) continue;
 
-              const pagesEnabled = await hasGitHubPages(repo.name);
-              await delay(5000); // 5-second delay between API calls
-
-              if (!pagesEnabled) {
-                console.log(` No GitHub Pages enabled, skipping.`);
-                continue;
+              const pagesUrl = `https://${userName}.github.io/${repo.name}/`;
+              const status = await checkUrl(pagesUrl);
+              
+              let repoDate = new Date().toISOString().split('T')[0];
+              if (existingRepos[repo.name]) {
+                repoDate = existingRepos[repo.name].date;
+                if (status === 'active' && existingRepos[repo.name].status !== 'active') {
+                  repoDate = new Date().toISOString().split('T')[0]; 
+                }
               }
 
-              console.log(` GitHub Pages enabled!`);
-
-              const url = `https://${userName}.github.io/${repo.name}/`;
-              const existingRepo = existingRepos[repo.name];
-
-              const status = await checkUrl(url);
-              console.log(` Status: ${status}`);
-
-              if (existingRepo) {
-                if (existingRepo.status !== status) {
-                  changeLog.statusChanged.push({
-                    name: repo.name,
-                    url: url,
-                    oldStatus: existingRepo.status,
-                    newStatus: status,
-                    date: existingRepo.date
-                  });
-
-                  if (status === '404' || status === 'building') {
-                    changeLog.errors.push({
-                      name: repo.name,
-                      url: url,
-                      status: status,
-                      date: existingRepo.date
-                    });
-                  }
-                }
-
-                let repoDate = existingRepo.date;
-                if (status === 'active' && existingRepo.status !== 'active') {
-                  repoDate = new Date().toISOString().split('T')[0];
-                  changeLog.dateUpdated.push({
-                    name: repo.name,
-                    url: url,
-                    oldDate: existingRepo.date,
-                    newDate: repoDate,
-                    status: status
-                  });
-                  console.log(` Date updated!`);
-                }
-
-                reposData.push({
-                  name: repo.name,
-                  url: url,
-                  date: repoDate,
-                  status: status,
-                  workflow_version: workflowVersion
-                });
-
-                delete existingRepos[repo.name];
-              } else {
-                const newDate = new Date().toISOString().split('T')[0];
-
-                changeLog.added.push({
-                  name: repo.name,
-                  url: url,
-                  status: status,
-                  date: newDate
-                });
-
-                reposData.push({
-                  name: repo.name,
-                  url: url,
-                  date: newDate,
-                  status: status,
-                  workflow_version: workflowVersion
-                });
-              }
-
-              await delay(5000); // 5-second delay between API calls
-            }
-
-            for (const repoName in existingRepos) {
-              const repo = existingRepos[repoName];
-              changeLog.deleted.push({
+              reposData.push({
                 name: repo.name,
-                url: repo.url,
-                status: repo.status,
-                date: repo.date
+                url: pagesUrl,
+                date: repoDate,
+                status: status,
+                workflow_version: workflowVersion,
+                created_at: repo.created_at.split('T')[0],
+                date_gap: calculateDateGap(repo.created_at, repoDate)
               });
+              await delay(200); 
             }
-
-            // Fetch creation date and calculate date gap for each repository
-            for (const repo of reposData) {
-              try {
-                const repoInfo = await githubApiRequest(`/repos/${userName}/${repo.name}`);
-                repo.created_at = repoInfo.created_at.split('T')[0];
-                repo.date_gap = calculateDateGap(repo.created_at, repo.date);
-              } catch (error) {
-                console.error(`Failed to fetch creation date for ${repo.name}:`, error.message);
-                repo.created_at = 'Unknown';
-                repo.date_gap = 'Unknown';
-              }
-            }
-
-            console.log(`\nDiscovery complete!`);
-            console.log(`Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})`);
-            console.log(`Previous version (${formatDate(existingReposList[0]?.date || new Date().toISOString())}): ${previousReposCount} repositories`);
-            console.log(`New version (${formatDate(new Date().toISOString())}): ${reposData.length} repositories`);
-            console.log(`Additions: ${changeLog.added.length} repositories`);
-            console.log(`Deletions: ${changeLog.deleted.length} repositories`);
 
             reposData.sort((a, b) => new Date(b.date) - new Date(a.date));
-
             fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
-            console.log('repos.json updated successfully.');
 
-            // Generate wiki content
             let wikiContent = `# Repository Status and History\n\n`;
-            wikiContent += `## Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})\n`;
-            wikiContent += `- Previous version (${formatDate(existingReposList[0]?.date || new Date().toISOString())}): ${previousReposCount} repositories\n`;
-            wikiContent += `- New version (${formatDate(new Date().toISOString())}): ${reposData.length} repositories\n`;
-            wikiContent += `- Additions: ${changeLog.added.length} repositories\n`;
-            wikiContent += `- Deletions: ${changeLog.deleted.length} repositories\n\n`;
+            wikiContent += `## Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})\n\n`;
+            wikiContent += `| Repository Name | Link | Added Date | Creation Date | Date Gap | Status | Workflow Version |\n`;
+            wikiContent += `|---|---|---|---|---|---|---|\n`;
 
-            wikiContent += `| Repository Name       | Link                                  | Added Date       | Creation Date   | Date Gap       | Status       | Workflow Version |\n`;
-            wikiContent += `|-----------------------|---------------------------------------|------------------|------------------|----------------|---------------|------------------|\n`;
-
-            reposData.forEach(repo => {
-              wikiContent += `| ${repo.name} | [Link](${repo.url}) | ${formatDate(repo.date)} | ${formatDate(repo.created_at)} | ${repo.date_gap} | ${repo.status} | #${repo.workflow_version} |\n`;
+            reposData.forEach(r => {
+              wikiContent += `| ${r.name} | [Link](${r.url}) | ${formatDate(r.date)} | ${formatDate(r.created_at)} | ${r.date_gap} | ${r.status} | #${r.workflow_version} |\n`;
             });
 
-            // Save wiki content to a file
             fs.writeFileSync('Repository-Status-and-History.md', wikiContent);
-            console.log('Repository-Status-and-History.md generated successfully.');
-
-            return {
-              success: true,
-              reposCount: reposData.length,
-              changeLog: changeLog,
-              hasChanges: changeLog.added.length > 0 || changeLog.deleted.length > 0 ||
-                changeLog.statusChanged.length > 0 || changeLog.dateUpdated.length > 0,
-              workflowVersion: workflowVersion
-            };
           }
 
-          updateRepoStatuses().then((result) => {
-            console.log(`\nWorkflow completed successfully!`);
-            process.exit(0);
-          }).catch(error => {
-            console.error('Fatal error updating repository statuses:', error);
-            console.error('The workflow failed, but repos.json should still be in a valid state.');
+          run().catch(err => {
+            console.error('Core failure:', err);
             process.exit(1);
           });
           EOF
 
-      - name: Commit and push if changed
-        id: commit
+      - name: Commit Core Changes
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add repos.json
-          git add Repository-Status-and-History.md
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            git commit -m "Auto-update repository status and wiki page [skip ci]"
+          git add repos.json Repository-Status-and-History.md
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: system telemetry update [skip ci]"
             git push
-            echo "Changes committed and pushed"
-            echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Push to Wiki
-        id: wiki
+      - name: Sync to Wiki
         continue-on-error: true
         run: |
-          if [[ "$(git ls-remote https://github.com/anacondy/3-DVD-archieve.wiki.git 2>/dev/null | wc -l)" -gt 0 ]]; then
-            cd ..
-            if git clone https://x-access-token:${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git 2>/dev/null; then
-              cd 3-DVD-archieve.wiki
-              cp ../3-DVD-archieve/Repository-Status-and-History.md .
-              git config --global user.name 'github-actions[bot]'
-              git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-              git add Repository-Status-and-History.md
-              if git diff --staged --quiet; then
-                echo "No wiki changes to commit"
-              else
-                git commit -m "Auto-update wiki page [skip ci]"
-                git push || echo "Wiki push failed - this is non-critical"
-              fi
-            else
-              echo "Wiki clone failed - this is non-critical"
-            fi
-          else
-            echo "Wiki repository not accessible - skipping wiki update. This is non-critical."
+          cd ..
+          git clone https://x-access-token:${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git wiki-repo
+          cd wiki-repo
+          cp ../3-DVD-archieve/Repository-Status-and-History.md .
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add Repository-Status-and-History.md
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: sync telemetry [skip ci]"
+            git push
           fi
 
   deploy-pages:
     needs: update-status
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Wait for branch update propagation
-        run: sleep 30
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
