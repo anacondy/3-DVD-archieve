@@ -1,24 +1,15 @@
-# Repository Update Log
+# Changelog — Workflow #1
 
-**Last Updated:** (Will be automatically updated by workflow)
+**Generated:** 2026-06-17
 
-## Summary
+- **Total Repositories:** 90
+- **Active:** 85 | **Building:** 0 | **404:** 5
 
-- **Repositories Added:** 0
-- **Repositories Deleted:** 0
-- **Status Changes:** 0
-- **Date Updates:** 0
-- **Errors/Issues:** 0
+## Dead / 404 Repositories
 
-## ℹ️ No Changes
+- Q-A-parli: https://anacondy.github.io/Q-A-parli/
+- sansad-qa: https://anacondy.github.io/sansad-qa/
+- CSE-candidate-INDEX: https://anacondy.github.io/CSE-candidate-INDEX/
+- 3-Neon-pulse--24-bad-day-: https://anacondy.github.io/3-Neon-pulse--24-bad-day-/
+- 25--3-pro-test: https://anacondy.github.io/25--3-pro-test/
 
-This file will be automatically updated by the workflow every time it runs.
-
-The workflow will track and display:
-- 🆕 New repositories added
-- 🗑️ Repositories deleted (no longer have GitHub Pages)
-- 🔄 Status changes (active ↔ 404 ↔ building)
-- 📅 Date updates (when repositories become active)
-- ⚠️ Errors or issues detected
-
-Each section will include a table with relevant details including repository names, URLs, statuses, and dates.
