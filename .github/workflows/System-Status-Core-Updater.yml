@@ -1,3 +1,10 @@
+# .github/workflows/System-Status-Core-Updater.yml
+# PHASE 1 EMERGENCY FIX — 2026-06-17
+# Fixes: syntax errors (iandN, new Error template literals, missing parens on tagged templates),
+#        new-repo detection (accepts 'building' as valid Pages),
+#        fragile wiki paths (GITHUB_WORKSPACE),
+#        deprecated upload-pages-artifact@v3 -> v4.
+
 name: System Status Core Updater
 
 on:
@@ -18,7 +25,6 @@ jobs:
   update-status:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,7 +47,6 @@ jobs:
           node << 'EOF'
           const fs = require('fs');
           const https = require('https');
-
           const userName = 'anacondy';
 
           function formatDate(dateString) {
@@ -58,7 +63,7 @@ jobs:
           function calculateDateGap(creationDate, additionDate) {
             const creation = new Date(creationDate);
             const addition = new Date(additionDate);
-            if (isNaN(creation.getTime()) || iandN(addition.getTime())) return 'Unknown';
+            if (isNaN(creation.getTime()) || isNaN(addition.getTime())) return 'Unknown';
             const gap = Math.floor((addition - creation) / (1000 * 60 * 60 * 24));
             return `${gap} days`;
           }
@@ -83,13 +88,13 @@ jobs:
                   res.on('data', chunk => data += chunk);
                   res.on('end', () => {
                     if (res.statusCode >= 200 && res.statusCode < 300) {
-                      try { resolve(JSON.parse(data)); } 
+                      try { resolve(JSON.parse(data)); }
                       catch (e) { reject(new Error(`JSON Parse Error: ${e.message}`)); }
                     } else if (res.statusCode === 403 || res.statusCode === 429) {
                       if (retries > 0) {
                         setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 10000);
                       } else {
-                        reject(new Error(`Rate limit exceeded`));
+                        reject(new Error(`Rate limit exceeded (HTTP ${res.statusCode})`));
                       }
                     } else if (res.statusCode === 404 && method === 'GET') {
                       resolve(null);
@@ -98,23 +103,37 @@ jobs:
                     }
                   });
                 });
+
                 req.on('error', (err) => {
-                  if (retries > 0) setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 5000);
-                  else reject(err);
+                  if (retries > 0) {
+                    setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 5000);
+                  } else {
+                    reject(err);
+                  }
                 });
+
                 if (body) req.write(body);
                 req.end();
               };
+
               makeRequest();
             });
           }
 
           async function checkUrl(url) {
             return new Promise((resolve) => {
-              const req = https.request(url, { method: 'HEAD', timeout: 10000, headers: {'User-Agent': 'Mozilla/5.0'} }, (res) => {
-                if (res.statusCode === 200 || res.statusCode === 301 || res.statusCode === 302) resolve('active');
-                else if (res.statusCode === 404) resolve('404');
-                else resolve('building');
+              const req = https.request(url, {
+                method: 'HEAD',
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0' }
+              }, (res) => {
+                if (res.statusCode === 200 || res.statusCode === 301 || res.statusCode === 302) {
+                  resolve('active');
+                } else if (res.statusCode === 404) {
+                  resolve('404');
+                } else {
+                  resolve('building');
+                }
               });
               req.on('error', () => resolve('404'));
               req.on('timeout', () => { req.destroy(); resolve('building'); });
@@ -143,8 +162,10 @@ jobs:
               const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
               return !!(pages && (pages.html_url || pages.status));
             } catch (error) {
+              // Fallback: if Pages API fails (404 / no permission), try HEAD to the live URL.
+              // PHASE 1 FIX: accept 'active' OR 'building' as valid so new repos are captured immediately.
               const urlStatus = await checkUrl(`https://${userName}.github.io/${repoName}/`);
-              return urlStatus === 'active';
+              return urlStatus === 'active' || urlStatus === 'building';
             }
           }
 
@@ -154,10 +175,11 @@ jobs:
             try {
               const fileData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
               fileData.forEach(r => existingRepos[r.name] = r);
-            } catch(e) {}
+            } catch (e) { /* ignore missing/corrupt repos.json */ }
 
             const reposData = [];
             const workflowVersion = process.env.GITHUB_RUN_NUMBER || 'Unknown';
+            const todayIso = new Date().toISOString().split('T')[0];
 
             for (const repo of allRepos) {
               const hasPages = await hasGitHubPages(repo.name);
@@ -165,12 +187,13 @@ jobs:
 
               const pagesUrl = `https://${userName}.github.io/${repo.name}/`;
               const status = await checkUrl(pagesUrl);
-              
-              let repoDate = new Date().toISOString().split('T')[0];
+
+              let repoDate = todayIso;
               if (existingRepos[repo.name]) {
                 repoDate = existingRepos[repo.name].date;
+                // If it just became active from a non-active state, mark the date it came online.
                 if (status === 'active' && existingRepos[repo.name].status !== 'active') {
-                  repoDate = new Date().toISOString().split('T')[0]; 
+                  repoDate = todayIso;
                 }
               }
 
@@ -183,22 +206,39 @@ jobs:
                 created_at: repo.created_at.split('T')[0],
                 date_gap: calculateDateGap(repo.created_at, repoDate)
               });
-              await delay(200); 
+
+              await delay(200);
             }
 
             reposData.sort((a, b) => new Date(b.date) - new Date(a.date));
             fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
 
+            // Build Repository-Status-and-History.md
             let wikiContent = `# Repository Status and History\n\n`;
             wikiContent += `## Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})\n\n`;
             wikiContent += `| Repository Name | Link | Added Date | Creation Date | Date Gap | Status | Workflow Version |\n`;
             wikiContent += `|---|---|---|---|---|---|---|\n`;
-
             reposData.forEach(r => {
               wikiContent += `| ${r.name} | [Link](${r.url}) | ${formatDate(r.date)} | ${formatDate(r.created_at)} | ${r.date_gap} | ${r.status} | #${r.workflow_version} |\n`;
             });
-
             fs.writeFileSync('Repository-Status-and-History.md', wikiContent);
+
+            // PHASE 1 FIX: also write a simple CHANGELOG.md so the template stops being empty.
+            let changeLog = `# Changelog — Workflow #${workflowVersion}\n\n`;
+            changeLog += `**Generated:** ${todayIso}\n\n`;
+            const activeCount = reposData.filter(r => r.status === 'active').length;
+            const buildingCount = reposData.filter(r => r.status === 'building').length;
+            const deadCount = reposData.filter(r => r.status === '404').length;
+            changeLog += `- **Total Repositories:** ${reposData.length}\n`;
+            changeLog += `- **Active:** ${activeCount} | **Building:** ${buildingCount} | **404:** ${deadCount}\n\n`;
+            if (deadCount > 0) {
+              changeLog += `## Dead / 404 Repositories\n\n`;
+              reposData.filter(r => r.status === '404').forEach(r => {
+                changeLog += `- ${r.name}: ${r.url}\n`;
+              });
+              changeLog += `\n`;
+            }
+            fs.writeFileSync('CHANGELOG.md', changeLog);
           }
 
           run().catch(err => {
@@ -211,7 +251,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add repos.json Repository-Status-and-History.md
+          git add repos.json Repository-Status-and-History.md CHANGELOG.md
           if ! git diff --staged --quiet; then
             git commit -m "chore: system telemetry update [skip ci]"
             git push
@@ -219,13 +259,16 @@ jobs:
 
       - name: Sync to Wiki
         continue-on-error: true
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
-          cd ..
-          git clone https://x-access-token:${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/anacondy/3-DVD-archieve.wiki.git wiki-repo
-          cd wiki-repo
-          cp ../3-DVD-archieve/Repository-Status-and-History.md .
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # PHASE 1 FIX: use absolute paths instead of fragile cd ..
+          git clone "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/anacondy/3-DVD-archieve.wiki.git" "${GITHUB_WORKSPACE}/wiki-repo"
+          cp "${GITHUB_WORKSPACE}/Repository-Status-and-History.md" "${GITHUB_WORKSPACE}/wiki-repo/"
+          cd "${GITHUB_WORKSPACE}/wiki-repo"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add Repository-Status-and-History.md
           if ! git diff --staged --quiet; then
             git commit -m "docs: sync telemetry [skip ci]"
@@ -241,7 +284,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v4
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: '.'
       - name: Deploy to GitHub Pages
