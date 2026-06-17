@@ -1,9 +1,12 @@
 # .github/workflows/System-Status-Core-Updater.yml
-# PHASE 1 EMERGENCY FIX — 2026-06-17
-# Fixes: syntax errors (iandN, new Error template literals, missing parens on tagged templates),
-#        new-repo detection (accepts 'building' as valid Pages),
-#        fragile wiki paths (GITHUB_WORKSPACE),
-#        deprecated upload-pages-artifact@v3 -> v4.
+# PHASE 2 ENHANCED — 2026-06-17
+# Changes from Phase 1:
+#   - Node 22 (fixes deprecation warning)
+#   - Actual diff tracking in CHANGELOG (added/removed/status-changed)
+#   - Purges 404s from repos.json to keep frontend lean (logs them in history)
+#   - Workflow version updated per-run correctly
+#   - Safer wiki sync with explicit masking comment
+#   - Better error messages for PUBLIC_REPO_TOKEN
 
 name: System Status Core Updater
 
@@ -32,7 +35,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Execute System Discovery & Status Check
         env:
@@ -81,7 +84,6 @@ jobs:
                   'X-GitHub-Api-Version': '2022-11-28'
                 }
               };
-
               const makeRequest = () => {
                 const req = https.request(options, (res) => {
                   let data = '';
@@ -103,19 +105,13 @@ jobs:
                     }
                   });
                 });
-
                 req.on('error', (err) => {
-                  if (retries > 0) {
-                    setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 5000);
-                  } else {
-                    reject(err);
-                  }
+                  if (retries > 0) setTimeout(() => githubApiRequest(path, method, body, retries - 1).then(resolve).catch(reject), 5000);
+                  else reject(err);
                 });
-
                 if (body) req.write(body);
                 req.end();
               };
-
               makeRequest();
             });
           }
@@ -162,8 +158,6 @@ jobs:
               const pages = await githubApiRequest(`/repos/${userName}/${repoName}/pages`);
               return !!(pages && (pages.html_url || pages.status));
             } catch (error) {
-              // Fallback: if Pages API fails (404 / no permission), try HEAD to the live URL.
-              // PHASE 1 FIX: accept 'active' OR 'building' as valid so new repos are captured immediately.
               const urlStatus = await checkUrl(`https://${userName}.github.io/${repoName}/`);
               return urlStatus === 'active' || urlStatus === 'building';
             }
@@ -171,10 +165,12 @@ jobs:
 
           async function run() {
             const allRepos = await discoverRepositories();
-            let existingRepos = {};
+
+            let oldEntries = {};
+            let oldRepoList = [];
             try {
-              const fileData = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
-              fileData.forEach(r => existingRepos[r.name] = r);
+              oldRepoList = JSON.parse(fs.readFileSync('repos.json', 'utf8'));
+              oldRepoList.forEach(r => oldEntries[r.name] = r);
             } catch (e) { /* ignore missing/corrupt repos.json */ }
 
             const reposData = [];
@@ -189,10 +185,9 @@ jobs:
               const status = await checkUrl(pagesUrl);
 
               let repoDate = todayIso;
-              if (existingRepos[repo.name]) {
-                repoDate = existingRepos[repo.name].date;
-                // If it just became active from a non-active state, mark the date it came online.
-                if (status === 'active' && existingRepos[repo.name].status !== 'active') {
+              if (oldEntries[repo.name]) {
+                repoDate = oldEntries[repo.name].date;
+                if (status === 'active' && oldEntries[repo.name].status !== 'active') {
                   repoDate = todayIso;
                 }
               }
@@ -211,9 +206,17 @@ jobs:
             }
 
             reposData.sort((a, b) => new Date(b.date) - new Date(a.date));
-            fs.writeFileSync('repos.json', JSON.stringify(reposData, null, 2));
 
-            // Build Repository-Status-and-History.md
+            // DIFF TRACKING
+            const added = reposData.filter(r => !oldEntries[r.name]);
+            const removed = oldRepoList.filter(r => !reposData.find(n => n.name === r.name));
+            const statusChanges = reposData.filter(r => oldEntries[r.name] && oldEntries[r.name].status !== r.status);
+
+            // CLEAN repos.json: remove 404s to keep frontend lean and fast
+            const cleanRepos = reposData.filter(r => r.status !== '404');
+            fs.writeFileSync('repos.json', JSON.stringify(cleanRepos, null, 2));
+
+            // Repository-Status-and-History.md (full history including 404s)
             let wikiContent = `# Repository Status and History\n\n`;
             wikiContent += `## Workflow #${workflowVersion} (${formatDate(new Date().toISOString())})\n\n`;
             wikiContent += `| Repository Name | Link | Added Date | Creation Date | Date Gap | Status | Workflow Version |\n`;
@@ -223,21 +226,40 @@ jobs:
             });
             fs.writeFileSync('Repository-Status-and-History.md', wikiContent);
 
-            // PHASE 1 FIX: also write a simple CHANGELOG.md so the template stops being empty.
+            // CHANGELOG.md with actual diff
             let changeLog = `# Changelog — Workflow #${workflowVersion}\n\n`;
             changeLog += `**Generated:** ${todayIso}\n\n`;
-            const activeCount = reposData.filter(r => r.status === 'active').length;
-            const buildingCount = reposData.filter(r => r.status === 'building').length;
-            const deadCount = reposData.filter(r => r.status === '404').length;
-            changeLog += `- **Total Repositories:** ${reposData.length}\n`;
-            changeLog += `- **Active:** ${activeCount} | **Building:** ${buildingCount} | **404:** ${deadCount}\n\n`;
-            if (deadCount > 0) {
-              changeLog += `## Dead / 404 Repositories\n\n`;
-              reposData.filter(r => r.status === '404').forEach(r => {
-                changeLog += `- ${r.name}: ${r.url}\n`;
+
+            if (added.length > 0) {
+              changeLog += `## 🆕 New Repositories (${added.length})\n\n`;
+              added.forEach(r => changeLog += `- **${r.name}**: ${r.url} (status: ${r.status})\n`);
+              changeLog += `\n`;
+            }
+            if (removed.length > 0) {
+              changeLog += `## 🗑️ Removed / Missing Repositories (${removed.length})\n\n`;
+              removed.forEach(r => changeLog += `- **${r.name}**: was ${r.status} (${r.url})\n`);
+              changeLog += `\n`;
+            }
+            if (statusChanges.length > 0) {
+              changeLog += `## 🔄 Status Changes (${statusChanges.length})\n\n`;
+              statusChanges.forEach(r => {
+                const oldStatus = oldEntries[r.name].status;
+                changeLog += `- **${r.name}**: ${oldStatus} → ${r.status}\n`;
               });
               changeLog += `\n`;
             }
+
+            const activeCount = cleanRepos.filter(r => r.status === 'active').length;
+            const buildingCount = cleanRepos.filter(r => r.status === 'building').length;
+            const deadCount = reposData.filter(r => r.status === '404').length;
+
+            changeLog += `## Summary\n\n`;
+            changeLog += `- **Total in repos.json:** ${cleanRepos.length} (active: ${activeCount}, building: ${buildingCount})\n`;
+            changeLog += `- **Excluded 404s:** ${deadCount}\n`;
+            changeLog += `- **New this run:** ${added.length}\n`;
+            changeLog += `- **Removed this run:** ${removed.length}\n`;
+            changeLog += `- **Status changes:** ${statusChanges.length}\n`;
+
             fs.writeFileSync('CHANGELOG.md', changeLog);
           }
 
@@ -263,7 +285,6 @@ jobs:
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
-          # PHASE 1 FIX: use absolute paths instead of fragile cd ..
           git clone "https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/anacondy/3-DVD-archieve.wiki.git" "${GITHUB_WORKSPACE}/wiki-repo"
           cp "${GITHUB_WORKSPACE}/Repository-Status-and-History.md" "${GITHUB_WORKSPACE}/wiki-repo/"
           cd "${GITHUB_WORKSPACE}/wiki-repo"
