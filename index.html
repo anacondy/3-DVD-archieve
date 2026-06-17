@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -367,7 +367,7 @@
 
         <!-- Start Overlay -->
         <div id="start-overlay" onclick="startExperience()">
-            <div class="pixel-font glow-text text-xl animate-bounce">▶ TAP TO START</div>
+            <div class="pixel-font glow-text text-xl animate-bounce">â–¶ TAP TO START</div>
             <div class="dim-text mt-4 text-sm">INITIALIZE SYSTEM AUDIO</div>
         </div>
 
@@ -389,7 +389,7 @@
         <div id="ui-layer">
             <div class="top-bar">
                 <div class="side-data text-left">
-                    <span class="glow-text">REC ●</span><br>
+                    <span class="glow-text">REC â—</span><br>
                     <span class="dim-text">TAPE: A-04</span><br>
                     <span class="dim-text">FPS: <span id="fps-counter">60</span></span>
                 </div>
@@ -716,6 +716,7 @@
                 link.href = repo.url;
                 link.className = 'repo-item';
                 link.target = "_blank"; // Open in new tab
+                link.rel = "noopener noreferrer"; // Security: prevent tabnapping
                 
                 // Add index number for retro list feel
                 const idxStr = (index + 1).toString().padStart(2, '0');
@@ -967,3 +968,4 @@
     </script>
 </body>
 </html>
+
