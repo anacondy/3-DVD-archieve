@@ -721,12 +721,20 @@
                 // Add index number for retro list feel
                 const idxStr = (index + 1).toString().padStart(2, '0');
                 
-                link.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items: center;">
-                        <span class="truncate pr-4">${idxStr}. ${repo.name}</span>
-                        <span class="dim-text text-xs whitespace-nowrap">${formatRetroDate(repo.date)}</span>
-                    </div>
-                `;
+                                // Phase 2: Safe DOM construction (prevents XSS injection)
+                const div = document.createElement('div');
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.alignItems = 'center';
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'truncate pr-4';
+                nameSpan.textContent = `${idxStr}. ${repo.name}`;
+                const dateSpan = document.createElement('span');
+                dateSpan.className = 'dim-text text-xs whitespace-nowrap';
+                dateSpan.textContent = formatRetroDate(repo.date);
+                div.appendChild(nameSpan);
+                div.appendChild(dateSpan);
+                link.appendChild(div);
                 
                 // Add hover sound effect
                 link.addEventListener('mouseenter', () => AudioEngine.playHoverSound());
@@ -968,4 +976,5 @@
     </script>
 </body>
 </html>
+
 
