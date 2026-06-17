@@ -1,0 +1,10 @@
+# --- Phase 1 cleanup additions ---
+log.txt
+FULL_REPO_BUNDLE.md
+*.bundle.md
+bundle_repo.py
+Bundle-Repo.ps1
+Phase1-Cleanup.ps1
+Phase1-Workflow-Fix.yml
+2026-*_Audit_Report.md
+# --- end Phase 1 ---
