@@ -1,4 +1,4 @@
-# Changelog — Workflow #2
+# Changelog — Workflow #3
 
 **Generated:** 2026-06-17
 
