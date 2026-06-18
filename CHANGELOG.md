@@ -1,15 +1,104 @@
-# Changelog — Workflow #3
+# Changelog — Workflow #4
 
-**Generated:** 2026-06-17
+**Generated:** 2026-06-18
 
-- **Total Repositories:** 90
-- **Active:** 85 | **Building:** 0 | **404:** 5
+## 🆕 New Repositories (90)
 
-## Dead / 404 Repositories
+- **25--3-pro-test**: https://anacondy.github.io/25--3-pro-test/ (status: 404)
+- **25-2-saving-pro-2**: https://anacondy.github.io/25-2-saving-pro-2/ (status: active)
+- **3--Aussie-Political-MAP**: https://anacondy.github.io/3--Aussie-Political-MAP/ (status: active)
+- **3-24-25-26-**: https://anacondy.github.io/3-24-25-26-/ (status: active)
+- **3-25-GJ-Terminal**: https://anacondy.github.io/3-25-GJ-Terminal/ (status: active)
+- **3-Acid-Grauge-Exp**: https://anacondy.github.io/3-Acid-Grauge-Exp/ (status: active)
+- **3-Bad-day-24-CRT-SPACESHIP-**: https://anacondy.github.io/3-Bad-day-24-CRT-SPACESHIP-/ (status: active)
+- **3-Canada-map-**: https://anacondy.github.io/3-Canada-map-/ (status: active)
+- **3-car-grauge-exp-2-**: https://anacondy.github.io/3-car-grauge-exp-2-/ (status: active)
+- **3-CyperpunkSettings**: https://anacondy.github.io/3-CyperpunkSettings/ (status: active)
+- **3-desktop-refresher**: https://anacondy.github.io/3-desktop-refresher/ (status: active)
+- **3-DVD-archieve**: https://anacondy.github.io/3-DVD-archieve/ (status: active)
+- **3-ethereal-drift**: https://anacondy.github.io/3-ethereal-drift/ (status: active)
+- **3-GAL**: https://anacondy.github.io/3-GAL/ (status: active)
+- **3-Gem-ind-via-VCS**: https://anacondy.github.io/3-Gem-ind-via-VCS/ (status: active)
+- **3-GEM-Map**: https://anacondy.github.io/3-GEM-Map/ (status: active)
+- **3-Germany**: https://anacondy.github.io/3-Germany/ (status: active)
+- **3-Heli-24**: https://anacondy.github.io/3-Heli-24/ (status: active)
+- **3-iran**: https://anacondy.github.io/3-iran/ (status: active)
+- **3-L-trange-Experience**: https://anacondy.github.io/3-L-trange-Experience/ (status: active)
+- **3-LEGEND-RENAMER**: https://anacondy.github.io/3-LEGEND-RENAMER/ (status: active)
+- **3-mobile-indian-map**: https://anacondy.github.io/3-mobile-indian-map/ (status: active)
+- **3-Neon-pulse--24-bad-day-**: https://anacondy.github.io/3-Neon-pulse--24-bad-day-/ (status: 404)
+- **3-Ouroboros-Terminal**: https://anacondy.github.io/3-Ouroboros-Terminal/ (status: active)
+- **3-PS-Archieves**: https://anacondy.github.io/3-PS-Archieves/ (status: active)
+- **3-PS2-collection**: https://anacondy.github.io/3-PS2-collection/ (status: active)
+- **3-Regency-Horror-Menu**: https://anacondy.github.io/3-Regency-Horror-Menu/ (status: active)
+- **3-Regency-latern**: https://anacondy.github.io/3-Regency-latern/ (status: active)
+- **3-RetroDVD**: https://anacondy.github.io/3-RetroDVD/ (status: active)
+- **3-Robust-S-S-Scrapper**: https://anacondy.github.io/3-Robust-S-S-Scrapper/ (status: active)
+- **3-SOTL-Speed-test**: https://anacondy.github.io/3-SOTL-Speed-test/ (status: active)
+- **3-Sys-Repo-Access-READ-ONLY-**: https://anacondy.github.io/3-Sys-Repo-Access-READ-ONLY-/ (status: active)
+- **3-System-registry-**: https://anacondy.github.io/3-System-registry-/ (status: active)
+- **3-USA-getting-live-**: https://anacondy.github.io/3-USA-getting-live-/ (status: active)
+- **3-USA-Glassomorphic-MAP-2025**: https://anacondy.github.io/3-USA-Glassomorphic-MAP-2025/ (status: active)
+- **3-West-world**: https://anacondy.github.io/3-West-world/ (status: active)
+- **3-WestWorld-without-bounce-**: https://anacondy.github.io/3-WestWorld-without-bounce-/ (status: active)
+- **alvido-test-2**: https://anacondy.github.io/alvido-test-2/ (status: active)
+- **alvido-test-4**: https://anacondy.github.io/alvido-test-4/ (status: active)
+- **alvido-test-5**: https://anacondy.github.io/alvido-test-5/ (status: active)
+- **alvido-testing-1**: https://anacondy.github.io/alvido-testing-1/ (status: active)
+- **CARTO-flight-Gemini**: https://anacondy.github.io/CARTO-flight-Gemini/ (status: active)
+- **cinema-scanner-**: https://anacondy.github.io/cinema-scanner-/ (status: active)
+- **Cover-posters**: https://anacondy.github.io/Cover-posters/ (status: active)
+- **CSE-candidate-INDEX**: https://anacondy.github.io/CSE-candidate-INDEX/ (status: 404)
+- **deep-res-Job**: https://anacondy.github.io/deep-res-Job/ (status: active)
+- **falling-leaves-**: https://anacondy.github.io/falling-leaves-/ (status: active)
+- **geopolitical-insights**: https://anacondy.github.io/geopolitical-insights/ (status: active)
+- **GITHUB-BOARD-profile-icon**: https://anacondy.github.io/GITHUB-BOARD-profile-icon/ (status: active)
+- **GITHUB-SOURCE**: https://anacondy.github.io/GITHUB-SOURCE/ (status: active)
+- **GJ-Terminal-2-sorting-card-page-**: https://anacondy.github.io/GJ-Terminal-2-sorting-card-page-/ (status: active)
+- **GJ-Terminal-just-a-data-table-with-good-UI**: https://anacondy.github.io/GJ-Terminal-just-a-data-table-with-good-UI/ (status: active)
+- **glassmorphic-site-card-Ui-html-**: https://anacondy.github.io/glassmorphic-site-card-Ui-html-/ (status: active)
+- **GPA-calculator**: https://anacondy.github.io/GPA-calculator/ (status: active)
+- **grok-cis**: https://anacondy.github.io/grok-cis/ (status: active)
+- **Grok-Scanner-**: https://anacondy.github.io/Grok-Scanner-/ (status: active)
+- **Grok-Sissy**: https://anacondy.github.io/Grok-Sissy/ (status: active)
+- **Horror-dvd-wall**: https://anacondy.github.io/Horror-dvd-wall/ (status: active)
+- **Indian-SC-verdicts-site**: https://anacondy.github.io/Indian-SC-verdicts-site/ (status: active)
+- **iran-grade-colors**: https://anacondy.github.io/iran-grade-colors/ (status: active)
+- **leaves-dying-**: https://anacondy.github.io/leaves-dying-/ (status: active)
+- **Legend-Player**: https://anacondy.github.io/Legend-Player/ (status: active)
+- **live-volcano-ui**: https://anacondy.github.io/live-volcano-ui/ (status: active)
+- **login-input**: https://anacondy.github.io/login-input/ (status: active)
+- **mobile-comparison-site-**: https://anacondy.github.io/mobile-comparison-site-/ (status: active)
+- **MOUNTE-CRISTO**: https://anacondy.github.io/MOUNTE-CRISTO/ (status: active)
+- **MP-tracker-site-**: https://anacondy.github.io/MP-tracker-site-/ (status: active)
+- **my-living-map**: https://anacondy.github.io/my-living-map/ (status: active)
+- **paper-gemini-archieve-saving-progress-2-**: https://anacondy.github.io/paper-gemini-archieve-saving-progress-2-/ (status: active)
+- **papers-gemini-archive-4-**: https://anacondy.github.io/papers-gemini-archive-4-/ (status: active)
+- **Papers-login-better-security-**: https://anacondy.github.io/Papers-login-better-security-/ (status: active)
+- **Pint-site-saving-progress-1-**: https://anacondy.github.io/Pint-site-saving-progress-1-/ (status: active)
+- **Poster-Scanner**: https://anacondy.github.io/Poster-Scanner/ (status: active)
+- **Poster-scanner-2-**: https://anacondy.github.io/Poster-scanner-2-/ (status: active)
+- **powershell-cl-sc-cases-site-htmls-**: https://anacondy.github.io/powershell-cl-sc-cases-site-htmls-/ (status: active)
+- **Q-A-parli**: https://anacondy.github.io/Q-A-parli/ (status: 404)
+- **Qualified-Candidates-frontend-**: https://anacondy.github.io/Qualified-Candidates-frontend-/ (status: active)
+- **root_964_experience**: https://anacondy.github.io/root_964_experience/ (status: active)
+- **sansad-qa**: https://anacondy.github.io/sansad-qa/ (status: 404)
+- **SC-site-with-home-page-**: https://anacondy.github.io/SC-site-with-home-page-/ (status: active)
+- **Silent-Hill-Transcriber**: https://anacondy.github.io/Silent-Hill-Transcriber/ (status: active)
+- **stars-ui**: https://anacondy.github.io/stars-ui/ (status: active)
+- **stars-ui-2-**: https://anacondy.github.io/stars-ui-2-/ (status: active)
+- **stars-UI-3**: https://anacondy.github.io/stars-UI-3/ (status: active)
+- **termial-archieve-before-SQLite-imp**: https://anacondy.github.io/termial-archieve-before-SQLite-imp/ (status: active)
+- **Terminal-Archives-PYQs-**: https://anacondy.github.io/Terminal-Archives-PYQs-/ (status: active)
+- **terminal-site-post-mortem-**: https://anacondy.github.io/terminal-site-post-mortem-/ (status: active)
+- **URoot-964**: https://anacondy.github.io/URoot-964/ (status: active)
+- **Void-Green**: https://anacondy.github.io/Void-Green/ (status: active)
+- **Void-player-**: https://anacondy.github.io/Void-player-/ (status: active)
 
-- Q-A-parli: https://anacondy.github.io/Q-A-parli/
-- sansad-qa: https://anacondy.github.io/sansad-qa/
-- CSE-candidate-INDEX: https://anacondy.github.io/CSE-candidate-INDEX/
-- 3-Neon-pulse--24-bad-day-: https://anacondy.github.io/3-Neon-pulse--24-bad-day-/
-- 25--3-pro-test: https://anacondy.github.io/25--3-pro-test/
+## Summary
 
+- **Total in repos.json:** 85 (active: 85, building: 0)
+- **Excluded 404s:** 5
+- **New this run:** 90
+- **Removed this run:** 0
+- **Status changes:** 0
