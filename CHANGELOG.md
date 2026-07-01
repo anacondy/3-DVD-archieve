@@ -1,6 +1,6 @@
-# Changelog — Workflow #16
+# Changelog — Workflow #17
 
-**Generated:** 2026-06-30
+**Generated:** 2026-07-01
 
 ## 🆕 New Repositories (5)
 
