@@ -1,0 +1,971 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Retro DVD Interface + Repo List</title>
+    <!-- Importing Retro Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --phosphor-main: #33ff00;
+            --phosphor-dim: #1a8000;
+            --particle-color: #ffff00; /* Yellow Frost */
+            --bg-color: #050505;
+            --scanline-color: rgba(0, 0, 0, 0.5);
+            --highlight-bg: rgba(51, 255, 0, 0.2);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--phosphor-main);
+            font-family: 'VT323', monospace;
+            overflow: hidden; /* Prevent scrolling */
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Crucial for mobile app feel */
+        }
+
+        /* --- CRT EFFECT LAYERS --- */
+        #crt-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Canvas for Particles - GPU accelerated */
+        #particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            will-change: transform;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+        }
+
+        /* UI Layer */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            pointer-events: none; /* Let clicks pass to canvas */
+            padding: 20px;
+            box-sizing: border-box;
+            opacity: 0; /* Hidden initially */
+            transition: opacity 1s ease-in;
+        }
+
+        /* Intro Layer */
+        #intro-layer {
+            position: absolute;
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg-color);
+            transition: opacity 1s ease-out;
+            opacity: 0; /* Hidden until start */
+        }
+
+        /* Start Overlay */
+        #start-overlay {
+            position: absolute;
+            z-index: 50;
+            width: 100%;
+            height: 100%;
+            background: black;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        /* Scanlines - GPU accelerated */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.2) 50%,
+                rgba(0,0,0,0.2)
+            );
+            background-size: 100% 4px;
+            z-index: 20;
+            pointer-events: none;
+            will-change: transform;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+        }
+
+        /* Screen Glow/Vignette - GPU accelerated */
+        .vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,0.6) 100%);
+            z-index: 21;
+            pointer-events: none;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.7);
+            will-change: transform;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+        }
+
+        /* --- UI ELEMENTS --- */
+        .glow-text {
+            text-shadow: 0 0 5px var(--phosphor-main), 0 0 10px var(--phosphor-main);
+        }
+
+        .dim-text {
+            color: var(--phosphor-dim);
+            text-shadow: none;
+        }
+
+        .pixel-font {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        /* Intro DVD Logo SVG Styling */
+        .dvd-svg {
+            width: 80%;
+            max-width: 400px;
+            fill: none;
+            stroke: var(--phosphor-main);
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 8px var(--phosphor-main));
+        }
+
+        .dvd-path {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+        }
+
+        .dvd-disc {
+            stroke-dasharray: 600;
+            stroke-dashoffset: 600;
+        }
+        
+        /* Animations controlled by JS now to sync with audio */
+        .animate-draw {
+            animation: drawStroke 3s ease-in-out forwards;
+        }
+        
+        .animate-draw-delay {
+            animation: drawStroke 3s ease-in-out 0.5s forwards;
+        }
+
+        @keyframes drawStroke {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        /* Flashing cursor */
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+
+        /* Author Signature Effect */
+        .author-signature {
+            color: #fff; /* White hot core */
+            text-shadow: 0 0 5px #fff, 0 0 10px var(--phosphor-main), 0 0 20px var(--phosphor-main);
+            animation: signaturePulse 2s infinite ease-in-out alternate;
+        }
+
+        @keyframes signaturePulse {
+            0% { opacity: 0.7; text-shadow: 0 0 2px #fff, 0 0 5px var(--phosphor-main); transform: scale(0.98); }
+            100% { opacity: 1; text-shadow: 0 0 10px #fff, 0 0 20px var(--phosphor-main), 0 0 40px var(--phosphor-main); transform: scale(1.02); }
+        }
+
+        /* Layout Grid */
+        .top-bar, .bottom-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        
+        .side-data {
+            font-size: 0.8rem;
+            line-height: 1.2;
+            opacity: 0.8;
+        }
+
+        .center-hud {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            width: 100%;
+            max-width: 800px;
+            /* Allow clicking inside the HUD (for links) */
+            pointer-events: auto; 
+        }
+
+        /* Splash Screen (DVD VIDEO) */
+        #splash-screen {
+            transition: opacity 0.5s ease-out;
+        }
+
+        /* Repository List Styles */
+        #repo-screen {
+            display: none; /* Hidden initially */
+            opacity: 0;
+            transition: opacity 1s ease-in;
+            text-align: center;
+            width: 100%;
+        }
+
+        .repo-list-container {
+            width: 90%;
+            max-width: 600px;
+            height: 55vh; /* Spacious height */
+            margin: 20px auto;
+            border: 2px solid var(--phosphor-dim);
+            padding: 10px;
+            overflow-y: auto;
+            text-align: left;
+            background: rgba(0, 20, 0, 0.3);
+            box-shadow: 0 0 15px rgba(51, 255, 0, 0.1);
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        }
+
+        /* Custom Retro Scrollbar */
+        .repo-list-container::-webkit-scrollbar {
+            width: 12px;
+        }
+        .repo-list-container::-webkit-scrollbar-track {
+            background: #000;
+            border-left: 1px solid var(--phosphor-dim);
+        }
+        .repo-list-container::-webkit-scrollbar-thumb {
+            background: var(--phosphor-dim);
+            border: 1px solid #000;
+        }
+        .repo-list-container::-webkit-scrollbar-thumb:hover {
+            background: var(--phosphor-main);
+        }
+
+        .repo-item {
+            display: block;
+            padding: 15px;
+            margin-bottom: 5px;
+            text-decoration: none;
+            color: var(--phosphor-main);
+            font-size: 1.2rem;
+            border-bottom: 1px dashed var(--phosphor-dim);
+            transition: all 0.2s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .repo-item:hover {
+            background-color: var(--phosphor-main);
+            color: black;
+            font-weight: bold;
+            text-shadow: none;
+        }
+
+        .repo-item:hover::before {
+            content: '>';
+            position: absolute;
+            left: 5px;
+        }
+
+        /* Responsive tweaks */
+        @media (max-width: 768px) {
+            .side-data { font-size: 0.6rem; }
+            .dvd-svg { width: 90%; }
+            .repo-item { font-size: 0.9rem; padding: 12px; } /* Slightly smaller text for mobile */
+            .center-hud { width: 95%; }
+            .repo-list-container {
+                max-width: 95%;
+                -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            }
+        }
+
+        /* Optimizations for 16:9 aspect ratio displays (standard widescreen) */
+        @media (aspect-ratio: 16/9) {
+            .repo-list-container {
+                max-width: 700px;
+                height: 60vh;
+            }
+        }
+        
+        /* Optimizations for 16:9 aspect ratio mobile devices */
+        @media (max-aspect-ratio: 16/9) and (max-width: 480px) {
+            .repo-list-container { height: 52vh; }
+            .repo-item { padding: 10px; font-size: 0.85rem; }
+        }
+
+        /* Optimizations for 20:9 and taller aspect ratio mobile devices (modern smartphones) */
+        @media (min-aspect-ratio: 19/9) and (max-width: 768px) {
+            .repo-list-container { 
+                height: 65vh; /* Use more vertical space on tall phones */
+            }
+            .side-data {
+                font-size: 0.55rem;
+                line-height: 1.1;
+            }
+            .repo-item { 
+                padding: 14px;
+                font-size: 1rem;
+            }
+        }
+        
+        /* High DPI / Retina optimizations for better performance */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            .scanlines {
+                background-size: 100% 2px; /* Finer scanlines on high DPI */
+            }
+            .vignette {
+                box-shadow: inset 0 0 40px rgba(0,0,0,0.6); /* Lighter shadow for better performance */
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="crt-container">
+        
+        <!-- CRT Visual Effects -->
+        <div class="scanlines"></div>
+        <div class="vignette"></div>
+
+        <!-- Start Overlay -->
+        <div id="start-overlay" onclick="startExperience()">
+            <div class="pixel-font glow-text text-xl animate-bounce">â–¶ TAP TO START</div>
+            <div class="dim-text mt-4 text-sm">INITIALIZE SYSTEM AUDIO</div>
+        </div>
+
+        <!-- 1. The Particle Canvas -->
+        <canvas id="particle-canvas"></canvas>
+
+        <!-- 2. The Intro Layer (DVD Logo) -->
+        <div id="intro-layer">
+            <svg class="dvd-svg" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+                <path id="path1" class="dvd-path" d="M20 20 H50 C70 20 70 60 50 60 H20 Z M30 30 V50 H45 C55 50 55 30 45 30 H30" />
+                <path id="path2" class="dvd-path" d="M75 20 L90 60 L105 20" />
+                <path id="path3" class="dvd-path" d="M110 20 H130 C150 20 150 60 130 60 H110 Z M120 30 V50 H125 C135 50 135 30 125 30 H120" />
+                <ellipse id="disc1" class="dvd-disc" cx="90" cy="75" rx="60" ry="10" />
+                <path id="disc2" class="dvd-disc" d="M40 90 H140" stroke-dasharray="5,5" />
+            </svg>
+        </div>
+
+        <!-- 3. The Main UI Layer (Loads after intro) -->
+        <div id="ui-layer">
+            <div class="top-bar">
+                <div class="side-data text-left">
+                    <span class="glow-text">REC â—</span><br>
+                    <span class="dim-text">TAPE: A-04</span><br>
+                    <span class="dim-text">FPS: <span id="fps-counter">60</span></span>
+                </div>
+                <div class="pixel-font text-center text-xl tracking-widest glow-text opacity-50">
+                    SYSTEM READY
+                </div>
+                <div class="side-data text-right">
+                    <span class="dim-text">BAT: 98%</span><br>
+                    <span class="dim-text">MEM: <span id="mem-counter">OK</span></span><br>
+                    <span class="blink glow-text">_ACTIVE</span>
+                </div>
+            </div>
+
+            <!-- Central Content Area -->
+            <div class="center-hud">
+                
+                <!-- Screen 1: Splash (DVD VIDEO) -->
+                <div id="splash-screen">
+                    <h1 class="pixel-font text-4xl md:text-6xl glow-text mb-4 tracking-tighter">DVD VIDEO</h1>
+                    <div class="w-64 h-2 bg-green-900 mx-auto border border-green-500 relative overflow-hidden">
+                        <div id="loading-bar" class="absolute top-0 left-0 h-full bg-green-400 w-full opacity-70"></div>
+                    </div>
+                    <p class="mt-2 text-sm dim-text uppercase tracking-widest">
+                        LOADING ARCHIVES...
+                    </p>
+                </div>
+
+                <!-- Screen 2: Repository List (Hidden Initially) -->
+                <div id="repo-screen">
+                    <h2 class="pixel-font text-2xl md:text-4xl glow-text mb-2">ARCHIVE INDEX</h2>
+                    <p class="dim-text text-sm mb-4">SELECT TITLE TO ACCESS</p>
+                    
+                    <div class="repo-list-container" id="repo-list">
+                        <!-- Content Injected via JS -->
+                    </div>
+
+                    <!-- Sine wave simulation moved here -->
+                    <canvas id="wave-canvas" width="300" height="40" class="mt-4 mx-auto opacity-70"></canvas>
+
+                    <!-- AUTHOR SIGNATURE -->
+                    <div class="mt-2 mb-2">
+                        <div class="text-[0.6rem] dim-text tracking-[0.5em] mb-1">//// SYS.ARCHITECT ////</div>
+                        <div class="author-signature pixel-font text-xl md:text-2xl tracking-widest">ANACONDY</div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="bottom-bar">
+                <div class="side-data">
+                    <span class="dim-text">COORD X: <span id="coord-x">000</span></span><br>
+                    <span class="dim-text">COORD Y: <span id="coord-y">000</span></span>
+                </div>
+                <div class="side-data text-right">
+                     <span class="dim-text">MODE: BROWSE</span><br>
+                     <span class="glow-text">TOUCH SCROLL</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================
+           DATA CONFIGURATION
+           ========================================= */
+        let rawRepoList = [];
+        
+        // Load repository data from JSON file
+        async function loadRepoData() {
+            try {
+                const response = await fetch('repos.json');
+                const data = await response.json();
+                // Filter to only include repos that are active (online on GitHub Pages)
+                // This excludes private repos and repos with 404 or building status
+                rawRepoList = data
+                    .filter(repo => repo.status === 'active')
+                    .map(repo => {
+                        return {
+                            name: repo.name,
+                            url: repo.url,
+                            date: repo.date,
+                            status: repo.status
+                        };
+                    });
+                // Sort by date descending (newest first)
+                rawRepoList.sort((a, b) => new Date(b.date) - new Date(a.date));
+            } catch (error) {
+                console.error('Failed to load repository data:', error);
+                // Fallback data in case fetch fails
+                rawRepoList = [];
+            }
+        }
+
+        /* =========================================
+           AUDIO ENGINE (Web Audio API)
+           ========================================= */
+        let audioCtx;
+        let masterGain;
+        
+        const AudioEngine = {
+            init: async function() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                
+                // Only create if not already existing
+                if (!audioCtx) {
+                    audioCtx = new AudioContext();
+                }
+
+                // MOBILE FIX: Always try to resume on user gesture
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                }
+
+                if (!masterGain) {
+                    masterGain = audioCtx.createGain();
+                    masterGain.gain.value = 0.3; 
+                    masterGain.connect(audioCtx.destination);
+                    
+                    // Only start loops if they haven't started (prevent doubling up)
+                    this.startAmbience();
+                    this.playBootSound();
+                }
+            },
+
+            startAmbience: function() {
+                // Low Hum
+                const oscLow = audioCtx.createOscillator();
+                oscLow.type = 'sine';
+                oscLow.frequency.value = 60;
+                const gainLow = audioCtx.createGain();
+                gainLow.gain.value = 0.1;
+                oscLow.connect(gainLow);
+                gainLow.connect(masterGain);
+                oscLow.start();
+
+                // High Whine
+                const oscHigh = audioCtx.createOscillator();
+                oscHigh.type = 'sine';
+                oscHigh.frequency.value = 15000;
+                const gainHigh = audioCtx.createGain();
+                gainHigh.gain.value = 0.02;
+                oscHigh.connect(gainHigh);
+                gainHigh.connect(masterGain);
+                oscHigh.start();
+            },
+
+            playBootSound: function() {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 2);
+                gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.5);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 3);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 3.1);
+            },
+
+            playParticleSound: function(intensity) {
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+                
+                if (Math.random() > 0.3) return; 
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const freq = 2000 + Math.random() * 3000; 
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05 * intensity, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            },
+
+            playHoverSound: function() {
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+                
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.05);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.06);
+            }
+        };
+
+        /* =========================================
+           VISUAL ENGINE (Optimized for 60+ FPS)
+           ========================================= */
+        // Constants for device capability thresholds
+        const SCREEN_AREA_THRESHOLD_LOW = 1.5; // Million pixels
+        const SCREEN_AREA_THRESHOLD_HIGH = 2.5; // Million pixels
+        const PIXEL_RATIO_THRESHOLD = 1.5;
+        const MOBILE_WIDTH_THRESHOLD = 768;
+        
+        // Cache device pixel ratio (doesn't change during runtime)
+        const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
+        
+        // Adaptive particle count based on device capabilities
+        let cachedParticleCount = null;
+        const getOptimalParticleCount = () => {
+            // Return cached value if already calculated
+            if (cachedParticleCount !== null) return cachedParticleCount;
+            
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const screenArea = (width * height) / 1000000; // in millions of pixels
+            
+            // High-end device detection via pixel ratio and screen size
+            const isHighEndDevice = DEVICE_PIXEL_RATIO > PIXEL_RATIO_THRESHOLD || screenArea > SCREEN_AREA_THRESHOLD_HIGH;
+            
+            // Mobile detection
+            const isMobile = width < MOBILE_WIDTH_THRESHOLD;
+            
+            // Base particle count on screen size and device capability
+            let count;
+            if (isMobile) {
+                count = screenArea > SCREEN_AREA_THRESHOLD_LOW ? 400 : 300;
+            } else if (isHighEndDevice) {
+                count = screenArea > SCREEN_AREA_THRESHOLD_HIGH ? 1000 : 800;
+            } else {
+                count = 600;
+            }
+            
+            cachedParticleCount = count;
+            return count;
+        };
+        
+        const PARTICLE_COUNT = getOptimalParticleCount();
+        const MOUSE_RADIUS = 120;
+        const PARTICLE_COLOR = '#ffff00';
+        
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d', { 
+            alpha: true,
+            desynchronized: true, // Enable low-latency canvas for high refresh rates
+            willReadFrequently: false
+        });
+        const uiLayer = document.getElementById('ui-layer');
+        const introLayer = document.getElementById('intro-layer');
+        const startOverlay = document.getElementById('start-overlay');
+        const splashScreen = document.getElementById('splash-screen');
+        const repoScreen = document.getElementById('repo-screen');
+        
+        // --- START SEQUENCE ---
+        async function startExperience() {
+            // 1. Load repository data first
+            await loadRepoData();
+            
+            // 2. Init Audio (Await for resume if needed)
+            await AudioEngine.init();
+
+            // 3. Remove overlay
+            startOverlay.style.opacity = '0';
+            setTimeout(() => startOverlay.style.display = 'none', 500);
+
+            // 4. Init Particles & Render
+            initParticles();
+            animate();
+            renderRepoList();
+
+            // 5. Play Intro (DVD Logo)
+            introLayer.style.opacity = '1';
+            document.getElementById('path1').classList.add('animate-draw');
+            document.getElementById('path2').classList.add('animate-draw');
+            document.getElementById('path3').classList.add('animate-draw');
+            document.getElementById('disc1').classList.add('animate-draw-delay');
+            document.getElementById('disc2').classList.add('animate-draw-delay');
+
+            // 6. Transition to Splash Screen
+            setTimeout(() => {
+                introLayer.style.opacity = '0';
+                setTimeout(() => {
+                    introLayer.style.display = 'none';
+                    uiLayer.style.opacity = '1';
+                    initWave(); 
+                    
+                    // 7. Transition to Repo List (After 3 seconds on Splash)
+                    setTimeout(() => {
+                        splashScreen.style.opacity = '0';
+                        setTimeout(() => {
+                            splashScreen.style.display = 'none';
+                            repoScreen.style.display = 'block';
+                            // Force reflow
+                            void repoScreen.offsetWidth;
+                            repoScreen.style.opacity = '1';
+                        }, 500);
+                    }, 3000);
+
+                }, 1000);
+            }, 3500);
+
+            resizeCanvas();
+        }
+
+        // --- RENDER REPO LIST ---
+        function formatRetroDate(dateStr) {
+            // dateStr is in format "2025-11-29" - convert to "29-NOV-2025"
+            if (!dateStr) return "UNKNOWN";
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return "UNKNOWN";
+            const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = months[date.getMonth()];
+            const year = date.getFullYear();
+            return `${day}-${month}-${year}`;
+        }
+
+        function renderRepoList() {
+            const listContainer = document.getElementById('repo-list');
+            listContainer.innerHTML = '';
+            
+            rawRepoList.forEach((repo, index) => {
+                const link = document.createElement('a');
+                link.href = repo.url;
+                link.className = 'repo-item';
+                link.target = "_blank"; // Open in new tab
+                link.rel = "noopener noreferrer"; // Security: prevent tabnapping
+                
+                // Add index number for retro list feel
+                const idxStr = (index + 1).toString().padStart(2, '0');
+                
+                link.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items: center;">
+                        <span class="truncate pr-4">${idxStr}. ${repo.name}</span>
+                        <span class="dim-text text-xs whitespace-nowrap">${formatRetroDate(repo.date)}</span>
+                    </div>
+                `;
+                
+                // Add hover sound effect
+                link.addEventListener('mouseenter', () => AudioEngine.playHoverSound());
+                link.addEventListener('click', () => AudioEngine.playHoverSound()); // For touch
+                
+                listContainer.appendChild(link);
+            });
+        }
+
+        // --- PARTICLE SYSTEM ---
+        let particles = [];
+        let mouse = { x: null, y: null, active: false, velocity: 0 };
+        let lastMousePos = { x: 0, y: 0 };
+
+        window.addEventListener('resize', () => {
+            cachedParticleCount = null; // Clear cache on resize
+            resizeCanvas();
+            initParticles();
+        });
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            
+            // Set display size (css pixels)
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            
+            // Set actual size in memory (scaled for retina displays)
+            canvas.width = rect.width * DEVICE_PIXEL_RATIO;
+            canvas.height = rect.height * DEVICE_PIXEL_RATIO;
+            
+            // Scale context to account for device pixel ratio
+            ctx.scale(DEVICE_PIXEL_RATIO, DEVICE_PIXEL_RATIO);
+            
+            // Update canvas dimensions for particle calculations
+            canvas.displayWidth = rect.width;
+            canvas.displayHeight = rect.height;
+        }
+
+        const updateMouse = (x, y) => {
+            const dx = x - lastMousePos.x;
+            const dy = y - lastMousePos.y;
+            mouse.velocity = Math.sqrt(dx*dx + dy*dy);
+            lastMousePos.x = x;
+            lastMousePos.y = y;
+            mouse.x = x;
+            mouse.y = y;
+            mouse.active = true;
+            
+            if (document.getElementById('coord-x')) {
+                document.getElementById('coord-x').innerText = Math.floor(x).toString().padStart(3, '0');
+                document.getElementById('coord-y').innerText = Math.floor(y).toString().padStart(3, '0');
+            }
+        };
+
+        window.addEventListener('mousemove', (e) => updateMouse(e.x, e.y));
+        
+        // Mobile Touch Handling (Prevent Default to stop scrolling while touching canvas)
+        window.addEventListener('touchmove', (e) => {
+            // Only prevent default if touching the canvas directly (not the list)
+            if(e.target === canvas) {
+                // e.preventDefault(); // Optional: uncomment if you want to block ALL scrolling on canvas
+            }
+            updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+        }, {passive: false});
+
+        window.addEventListener('touchstart', (e) => {
+            lastMousePos.x = e.touches[0].clientX;
+            lastMousePos.y = e.touches[0].clientY;
+            updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+            // Resume audio context on touch if needed
+            if(audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }, {passive: false});
+
+        window.addEventListener('touchend', () => { mouse.active = false; mouse.velocity = 0; });
+        window.addEventListener('mouseout', () => { mouse.active = false; mouse.velocity = 0; });
+
+        class Particle {
+            constructor() {
+                const w = canvas.displayWidth || canvas.width;
+                const h = canvas.displayHeight || canvas.height;
+                this.x = Math.random() * w;
+                this.y = Math.random() * h;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.size = Math.random() * 2 + 1; 
+                this.baseX = this.x;
+                this.baseY = this.y;
+                this.density = (Math.random() * 30) + 1;
+            }
+
+            draw() {
+                // Optimized drawing - fillRect is faster than arc for squares
+                ctx.fillStyle = PARTICLE_COLOR;
+                ctx.fillRect(this.x | 0, this.y | 0, this.size, this.size); // Bitwise OR for integer conversion (faster)
+            }
+
+            update() {
+                const w = canvas.displayWidth || canvas.width;
+                const h = canvas.displayHeight || canvas.height;
+                
+                if (mouse.active) {
+                    const dx = mouse.x - this.x;
+                    const dy = mouse.y - this.y;
+                    const distSq = dx * dx + dy * dy; // Use squared distance to avoid sqrt
+                    const radiusSq = MOUSE_RADIUS * MOUSE_RADIUS;
+                    
+                    if (distSq < radiusSq) {
+                        const distance = Math.sqrt(distSq); // Only calculate sqrt when needed
+                        const forceDirectionX = dx / distance;
+                        const forceDirectionY = dy / distance;
+                        const force = (MOUSE_RADIUS - distance) / MOUSE_RADIUS;
+                        const directionX = forceDirectionX * force * this.density;
+                        const directionY = forceDirectionY * force * this.density;
+
+                        this.vx -= directionX;
+                        this.vy -= directionY;
+
+                        // Optimized audio triggering
+                        if (mouse.velocity > 5 && Math.random() > 0.99) {
+                            AudioEngine.playParticleSound(Math.min(mouse.velocity / 20, 1));
+                        }
+                    }
+                }
+                
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= 0.95; 
+                this.vy *= 0.95;
+                
+                // Wrap around screen edges
+                if (this.x > w) this.x = 0;
+                else if (this.x < 0) this.x = w;
+                if (this.y > h) this.y = 0;
+                else if (this.y < 0) this.y = h;
+            }
+        }
+
+        function initParticles() {
+            particles = [];
+            const count = getOptimalParticleCount();
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        // High refresh rate animation loop with FPS tracking
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+        let actualFPS = 60;
+        let fpsUpdateTime = performance.now();
+        
+        // Cache DOM elements to avoid repeated lookups
+        let fpsCounterEl = null;
+        
+        function animate(currentTime) {
+            // Calculate delta time for frame-independent animation
+            const deltaTime = currentTime - lastFrameTime;
+            lastFrameTime = currentTime;
+            
+            // FPS calculation
+            frameCount++;
+            if (currentTime - fpsUpdateTime >= 1000) {
+                actualFPS = frameCount;
+                frameCount = 0;
+                fpsUpdateTime = currentTime;
+                
+                // Update FPS counter in UI (cache element reference)
+                if (!fpsCounterEl) fpsCounterEl = document.getElementById('fps-counter');
+                if (fpsCounterEl) fpsCounterEl.innerText = actualFPS;
+            }
+            
+            // Get display dimensions
+            const w = canvas.displayWidth || canvas.width;
+            const h = canvas.displayHeight || canvas.height;
+            
+            // Clear canvas efficiently
+            ctx.clearRect(0, 0, w, h);
+            
+            // Batch rendering for better performance
+            ctx.fillStyle = PARTICLE_COLOR;
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+            }
+            
+            requestAnimationFrame(animate);
+        }
+
+        function initWave() {
+            const waveCanvas = document.getElementById('wave-canvas');
+            const waveCtx = waveCanvas.getContext('2d', { alpha: true });
+            let offset = 0;
+            let lastWaveTime = performance.now();
+            
+            // Performance optimization: Skip pixels for smoother rendering
+            const WAVE_PIXEL_STEP = 2; // Render every 2nd pixel for better performance
+            
+            function drawWave(currentTime) {
+                // Frame-independent animation
+                const deltaTime = (currentTime - lastWaveTime) / 16.67; // Normalize to 60fps baseline
+                lastWaveTime = currentTime;
+                
+                waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+                waveCtx.beginPath();
+                waveCtx.lineWidth = 2;
+                waveCtx.strokeStyle = '#33ff00';
+                for (let i = 0; i < waveCanvas.width; i += WAVE_PIXEL_STEP) {
+                    const y = 20 + Math.sin(i * 0.05 + offset) * 10 * Math.sin(offset * 0.1);
+                    waveCtx.lineTo(i, y);
+                }
+                waveCtx.stroke();
+                offset += 0.1 * deltaTime;
+                requestAnimationFrame(drawWave);
+            }
+            drawWave(performance.now());
+
+            // Cache DOM element references
+            const memCounterEl = document.getElementById('mem-counter');
+            const loadingBarEl = document.getElementById('loading-bar');
+            
+            // Update memory status
+            setInterval(() => {
+                if(memCounterEl) memCounterEl.innerText = Math.random() > 0.9 ? "BUSY" : "OK";
+            }, 500);
+            
+            // Loading bar animation
+            let width = 100;
+            setInterval(() => {
+                if(loadingBarEl) {
+                    width = (width + 5) % 100;
+                    loadingBarEl.style.width = width + '%';
+                }
+            }, 100);
+        }
+    </script>
+</body>
+</html>
+
