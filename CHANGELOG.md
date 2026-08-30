@@ -1,18 +1,19 @@
-# Changelog — Workflow #76
+# Changelog — Workflow #77
 
-**Generated:** 2026-08-29
+**Generated:** 2026-08-30
 
-## 🆕 New Repositories (4)
+## 🆕 New Repositories (5)
 
 - **25--3-pro-test**: https://anacondy.github.io/25--3-pro-test/ (status: 404)
 - **3-Neon-pulse--24-bad-day-**: https://anacondy.github.io/3-Neon-pulse--24-bad-day-/ (status: 404)
 - **CSE-candidate-INDEX**: https://anacondy.github.io/CSE-candidate-INDEX/ (status: 404)
+- **Minimalist-browser-frontend-1**: https://anacondy.github.io/Minimalist-browser-frontend-1/ (status: active)
 - **sansad-qa**: https://anacondy.github.io/sansad-qa/ (status: 404)
 
 ## Summary
 
-- **Total in repos.json:** 88 (active: 88, building: 0)
+- **Total in repos.json:** 89 (active: 89, building: 0)
 - **Excluded 404s:** 4
-- **New this run:** 4
+- **New this run:** 5
 - **Removed this run:** 0
 - **Status changes:** 0
