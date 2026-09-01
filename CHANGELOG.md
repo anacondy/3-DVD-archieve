@@ -1,12 +1,11 @@
-# Changelog — Workflow #78
+# Changelog — Workflow #79
 
-**Generated:** 2026-08-31
+**Generated:** 2026-09-01
 
-## 🆕 New Repositories (5)
+## 🆕 New Repositories (4)
 
 - **25--3-pro-test**: https://anacondy.github.io/25--3-pro-test/ (status: 404)
 - **3-Neon-pulse--24-bad-day-**: https://anacondy.github.io/3-Neon-pulse--24-bad-day-/ (status: 404)
-- **Boilerplate-Research**: https://anacondy.github.io/Boilerplate-Research/ (status: active)
 - **CSE-candidate-INDEX**: https://anacondy.github.io/CSE-candidate-INDEX/ (status: 404)
 - **sansad-qa**: https://anacondy.github.io/sansad-qa/ (status: 404)
 
@@ -14,6 +13,6 @@
 
 - **Total in repos.json:** 90 (active: 90, building: 0)
 - **Excluded 404s:** 4
-- **New this run:** 5
+- **New this run:** 4
 - **Removed this run:** 0
 - **Status changes:** 0
