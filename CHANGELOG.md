@@ -1,6 +1,6 @@
-# Changelog — Workflow #107
+# Changelog — Workflow #108
 
-**Generated:** 2026-09-29
+**Generated:** 2026-09-30
 
 ## 🆕 New Repositories (4)
 
@@ -11,11 +11,11 @@
 
 ## 🔄 Status Changes (1)
 
-- **3-iran**: active → building
+- **3-iran**: building → active
 
 ## Summary
 
-- **Total in repos.json:** 91 (active: 90, building: 1)
+- **Total in repos.json:** 91 (active: 91, building: 0)
 - **Excluded 404s:** 4
 - **New this run:** 4
 - **Removed this run:** 0
