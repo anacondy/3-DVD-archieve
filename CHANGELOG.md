@@ -1,6 +1,6 @@
-# Changelog — Workflow #108
+# Changelog — Workflow #109
 
-**Generated:** 2026-09-30
+**Generated:** 2026-10-01
 
 ## 🆕 New Repositories (4)
 
@@ -9,14 +9,10 @@
 - **CSE-candidate-INDEX**: https://anacondy.github.io/CSE-candidate-INDEX/ (status: 404)
 - **sansad-qa**: https://anacondy.github.io/sansad-qa/ (status: 404)
 
-## 🔄 Status Changes (1)
-
-- **3-iran**: building → active
-
 ## Summary
 
 - **Total in repos.json:** 91 (active: 91, building: 0)
 - **Excluded 404s:** 4
 - **New this run:** 4
 - **Removed this run:** 0
-- **Status changes:** 1
+- **Status changes:** 0
