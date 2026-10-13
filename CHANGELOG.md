@@ -1,6 +1,6 @@
-# Changelog — Workflow #120
+# Changelog — Workflow #121
 
-**Generated:** 2026-10-12
+**Generated:** 2026-10-13
 
 ## 🆕 New Repositories (4)
 
